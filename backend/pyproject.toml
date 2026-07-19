@@ -3,13 +3,13 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "canviz"
-version = "0.3.1"
+name = "DynoSure-canviz"
+version = "0.1.0"
 description = "Open-source browser-based CAN bus analyzer"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "Chanchal Dhiman", email = "chanchalv.dhiman@gmail.com" }]
+authors = [{ name = "Mukesh Patel", email = "dynosure.india@gmail.com" }]
 keywords = ["CAN bus", "automotive", "analyzer", "cantools", "python-can", "J1939", "CANopen"]
 classifiers = [
     "Programming Language :: Python :: 3",
