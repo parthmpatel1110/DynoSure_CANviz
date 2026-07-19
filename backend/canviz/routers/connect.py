@@ -12,7 +12,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from canviz.bus import bus_manager
-from canviz.config import settings
 from canviz.models import ConnectRequest, ConnectionStatus, ActiveConnection
 from canviz.ws_broadcaster import broadcaster
 from canviz.stats_store import stats

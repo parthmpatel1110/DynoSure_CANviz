@@ -9,6 +9,7 @@ DELETE /dbc           — unload the current DBC
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from pydantic import BaseModel
 
 from canviz.dbc_store import dbc_store
 
@@ -32,9 +33,6 @@ async def get_messages():
     if not dbc_store.loaded:
         return {"loaded": False, "messages": []}
     return {"loaded": True, "filename": dbc_store.path, "messages": dbc_store.messages_list()}
-
-
-from pydantic import BaseModel
 
 class EncodeRequest(BaseModel):
     message_id: int
