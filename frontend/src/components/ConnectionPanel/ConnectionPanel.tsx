@@ -31,6 +31,7 @@ const INTERFACES: { label: string; value: InterfaceType; hint: string }[] = [
   { value: 'virtual',     label: 'virtual (testing)',            hint: 'Software bus - no hardware required' },
   { value: 'pcan',        label: 'PCAN (PEAK)',                  hint: 'PEAK PCAN-USB - requires PEAK driver installed. Shows as CAN-Hardware in Device Manager.' },
   { value: 'kvaser',      label: 'Kvaser',                       hint: 'Kvaser hardware - requires Kvaser CANlib installed. Shows as CAN-Hardware (Kvaser) in Device Manager.' },
+  { value: 'vector',      label: 'Vector CAN',                   hint: 'Vector CAN hardware - requires Vector driver installed. Channel can be index (e.g. 0, 1) or name (e.g. CAN1).' },
 ];
 
 export function ConnectionPanel() {
@@ -45,9 +46,11 @@ export function ConnectionPanel() {
   const totalFrames  = useFrameStore((s) => s.totalFramesReceived);
   const clearFrames  = useFrameStore((s) => s.clearFrames);
 
+  const activeConnections = useConnectionStore((s) => s.activeConnections || []);
+
   const isConnected   = status === 'connected';
   const isBusy        = status === 'connecting' || status === 'disconnecting';
-  const canConnect    = !isConnected && !isBusy;
+  const canConnect    = !isBusy;
   const canDisconnect = isConnected && !isBusy;
 
   const selectedIface = INTERFACES.find((i) => i.value === config.interface);
@@ -180,6 +183,21 @@ export function ConnectionPanel() {
         </div>
       )}
 
+      {/* vector: channel */}
+      {config.interface === 'vector' && (
+        <div className="field-group">
+          <label className="field-label">Channel (Index or Name)</label>
+          <input
+            className="field-input"
+            type="text"
+            placeholder="0"
+            value={config.channel ?? ''}
+            disabled={isConnected || isBusy}
+            onChange={(e) => setConfig({ channel: e.target.value })}
+          />
+        </div>
+      )}
+
       {/* Bitrate - not shown for virtual */}
       {config.interface !== 'virtual' && (
         <div className="field-group">
@@ -212,11 +230,54 @@ export function ConnectionPanel() {
         <button
           className="btn btn-danger"
           disabled={!canDisconnect}
-          onClick={disconnect}
+          onClick={() => disconnect()}
         >
-          {status === 'disconnecting' ? '…' : 'Disconnect'}
+          {status === 'disconnecting' ? '…' : 'Disconnect All'}
         </button>
       </div>
+
+      {/* Active Connections List */}
+      {activeConnections.length > 0 && (
+        <>
+          <div className="divider" style={{ marginTop: 12 }} />
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: 6, letterSpacing: '0.04em', fontFamily: 'var(--font-mono)' }}>
+            ACTIVE DEVICES ({activeConnections.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {activeConnections.map((conn) => (
+              <div
+                key={conn.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'var(--bg-elevated)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '4px 6px',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span className="mono text-xs" style={{ color: 'var(--accent-green)', fontWeight: 500 }}>
+                    {conn.interface.toUpperCase()}
+                  </span>
+                  <span className="text-xxs text-muted mono" style={{ fontSize: 9 }}>
+                    {conn.channel || `Idx ${conn.index}`} @ {conn.bitrate / 1000}k
+                  </span>
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: '#ef4444', fontSize: 10, padding: '2px 4px' }}
+                  onClick={() => disconnect(conn.id)}
+                  title="Disconnect device"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Clear buffer - only useful when connected or after a session */}
       {totalFrames > 0 && (

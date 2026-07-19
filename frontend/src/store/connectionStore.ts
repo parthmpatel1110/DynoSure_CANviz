@@ -7,13 +7,14 @@ interface ConnectionStore {
   status: ConnectionStatus;
   config: ConnectionConfig;
   error: string | null;
+  activeConnections: any[];
 
   // Actions
   setStatus: (s: ConnectionStatus) => void;
   setConfig: (patch: Partial<ConnectionConfig>) => void;
   setInterface: (iface: InterfaceType) => void;
   connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  disconnect: (connId?: string) => Promise<void>;
 }
 
 export const useConnectionStore = create<ConnectionStore>((set, get) => ({
@@ -25,6 +26,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     baudrate : 115200
   },
   error: null,
+  activeConnections: [],
 
   setStatus: (status) => set({ status }),
 
@@ -43,29 +45,35 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     })),
 
   connect: async () => {
-    const { config } = get();
+    const { config, activeConnections } = get();
     set({ status: 'connecting', error: null });
-    // Clear stale frames at the START of a new session so the table
-    // fills with fresh data. Clearing on disconnect would wipe the
-    // last-known state which the user may want to inspect after stopping.
-    useFrameStore.getState().clearFrames();
+    
+    // Clear stale frames only when opening the FIRST connection of the session
+    if (activeConnections.length === 0) {
+      useFrameStore.getState().clearFrames();
+    }
+
     try {
-      await apiConnect(config);
-      set({ status: 'connected' });
+      const res = await apiConnect(config);
+      set({ 
+        status: res.connected ? 'connected' : 'idle',
+        activeConnections: res.connections || [] 
+      });
     } catch (e) {
       set({ status: 'error', error: (e as Error).message });
     }
   },
 
-  disconnect: async () => {
+  disconnect: async (connId?: string) => {
     set({ status: 'disconnecting', error: null });
     try {
-      await apiDisconnect();
+      const res = await apiDisconnect(connId);
+      set({
+        status: res.connected ? 'connected' : 'idle',
+        activeConnections: res.connections || []
+      });
     } catch {
-      // Ignore — always transition to idle
+      set({ status: 'idle', activeConnections: [] });
     }
-    // Do NOT clear frames here — the table should freeze at last state
-    // so the user can inspect counts, fps, and last values after stopping.
-    set({ status: 'idle' });
   },
 }));

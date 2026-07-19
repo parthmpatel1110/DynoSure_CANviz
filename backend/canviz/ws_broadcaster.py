@@ -132,7 +132,7 @@ class WSBroadcaster:
             "timestamp":      round(msg.timestamp, 6),
             "is_extended_id": msg.is_extended_id,
             "is_fd":          msg.is_fd,
-            "channel":        0,
+            "channel":        str(msg.channel) if hasattr(msg, "channel") and msg.channel is not None else "0",
             "signals":        signals,
         }
 

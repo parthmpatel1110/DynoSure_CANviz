@@ -92,6 +92,7 @@ class DBCStore:
                 "id":      hex(msg.frame_id),
                 "name":    msg.name,
                 "length":  msg.length,
+                "is_extended_frame": msg.is_extended_frame,
                 "signals": [
                     {
                         "name":   s.name,

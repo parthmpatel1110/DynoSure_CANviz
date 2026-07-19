@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiSendFrame } from '../api/client';
+import { apiSendFrame, apiEncodeDbcMessage } from '../api/client';
 
 // Module-scope timer registry — never put intervals in Zustand state
 const timers = new Map<string, ReturnType<typeof setInterval>>();
@@ -17,6 +17,8 @@ export interface TransmitFrame {
   isRunning:  boolean;
   lastSent:   string | null;
   error:      string | null;
+  dbcMessageId?: number;
+  dbcSignalValues?: Record<string, number>;
 }
 
 function makeFrame(): TransmitFrame {
@@ -67,6 +69,8 @@ interface SendFrameStore {
   sendOnce:    (id: string) => Promise<void>;
   toggleTimer: (id: string) => void;
   stopAll:     () => void;
+  setDbcMessage: (id: string, msg: any | null) => Promise<void>;
+  updateFrameSignals: (id: string, signals: Record<string, number>) => Promise<void>;
 }
 
 export const useSendFrameStore = create<SendFrameStore>((set, get) => ({
@@ -120,6 +124,92 @@ export const useSendFrameStore = create<SendFrameStore>((set, get) => ({
   stopAll: () => {
     for (const timer of timers.values()) clearInterval(timer);
     timers.clear();
-    set((s) => ({ frames: s.frames.map((f) => ({ ...f, isRunning: false })) }));
+    set((s) => ({
+      frames: s.frames.map((f) => ({ ...f, isRunning: false })),
+    }));
+  },
+
+  setDbcMessage: async (id, msg) => {
+    if (!msg) {
+      // Clear DBC mode
+      set((s) => ({
+        frames: s.frames.map((f) =>
+          f.id === id
+            ? { ...f, dbcMessageId: undefined, dbcSignalValues: undefined, error: null }
+            : f
+        ),
+      }));
+      return;
+    }
+
+    const msgId = parseInt(msg.id, 16);
+    const initialSignals: Record<string, number> = {};
+    for (const sig of msg.signals) {
+      initialSignals[sig.name] = sig.min !== null ? sig.min : 0;
+    }
+
+    // Set initial configuration
+    set((s) => ({
+      frames: s.frames.map((f) =>
+        f.id === id
+          ? {
+              ...f,
+              canId: msg.id,
+              dlc: msg.length,
+              isExtended: msg.is_extended_frame,
+              dbcMessageId: msgId,
+              dbcSignalValues: initialSignals,
+              error: null,
+            }
+          : f
+      ),
+    }));
+
+    try {
+      const res = await apiEncodeDbcMessage(msgId, initialSignals);
+      const dataStr = res.data
+        .map((b) => b.toString(16).toUpperCase().padStart(2, '0'))
+        .join(' ');
+      set((s) => ({
+        frames: s.frames.map((f) =>
+          f.id === id ? { ...f, data: dataStr, dlc: res.dlc } : f
+        ),
+      }));
+    } catch (e) {
+      set((s) => ({
+        frames: s.frames.map((f) =>
+          f.id === id ? { ...f, error: (e as Error).message } : f
+        ),
+      }));
+    }
+  },
+
+  updateFrameSignals: async (id, signals) => {
+    const frame = get().frames.find((f) => f.id === id);
+    if (!frame || frame.dbcMessageId === undefined) return;
+
+    set((s) => ({
+      frames: s.frames.map((f) =>
+        f.id === id ? { ...f, dbcSignalValues: signals, error: null } : f
+      ),
+    }));
+
+    try {
+      const res = await apiEncodeDbcMessage(frame.dbcMessageId, signals);
+      const dataStr = res.data
+        .map((b) => b.toString(16).toUpperCase().padStart(2, '0'))
+        .join(' ');
+      set((s) => ({
+        frames: s.frames.map((f) =>
+          f.id === id ? { ...f, data: dataStr, dlc: res.dlc } : f
+        ),
+      }));
+    } catch (e) {
+      set((s) => ({
+        frames: s.frames.map((f) =>
+          f.id === id ? { ...f, error: (e as Error).message } : f
+        ),
+      }));
+    }
   },
 }));

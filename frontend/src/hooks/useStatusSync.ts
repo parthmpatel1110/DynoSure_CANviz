@@ -18,6 +18,7 @@ interface StatusResponse {
   bitrate?: number;
   index?: number;
   serial_baudrate?: number;
+  connections?: any[];
 }
 
 export function useStatusSync() {
@@ -42,11 +43,15 @@ export function useStatusSync() {
             index: data.index ?? 0,
           });
         }
+        if (data.connections) {
+          useConnectionStore.setState({ activeConnections: data.connections });
+        }
         // Only flip to connected if we aren't already (avoids flickering)
         if (currentStatus !== 'connected') {
           setStatus('connected');
         }
       } else {
+        useConnectionStore.setState({ activeConnections: [] });
         // Backend is disconnected - if we thought we were connected, correct it
         if (currentStatus === 'connected') {
           setStatus('idle');

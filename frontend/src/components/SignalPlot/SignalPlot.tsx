@@ -35,6 +35,8 @@ export function SignalPlot() {
   const windowSec        = usePlotStore((s) => s.windowSec);
   const setWindowSec     = usePlotStore((s) => s.setWindowSec);
 
+  const isTabMode = useMemo(() => window.location.search.includes('mode=plot'), []);
+
   // Subscribe to theme so opts rebuild on switch
   const theme = useThemeStore((s) => s.theme);
 
@@ -103,8 +105,8 @@ export function SignalPlot() {
     // Read CSS vars fresh each time — captures both initial and switched theme
     const pt = getPlotTheme();
     return {
-      width:  860,
-      height: 280,
+      width:  isTabMode ? (window.innerWidth - 48) : 860,
+      height: isTabMode ? (window.innerHeight - 150) : 280,
       series: [
         {},
         ...selectedSignals.map((key, i) => ({
@@ -172,6 +174,24 @@ export function SignalPlot() {
   const { containerRef, plotRef } = usePlot(opts, emptyData, [selectedSignals.join(','), theme]);
   usePlotRenderLoop(plotRef, selectedSignals, windowSec, isPausedRef, onPausedChange);
 
+  // Responsive resize handler
+  useEffect(() => {
+    const handleResize = () => {
+      if (plotRef.current && containerRef.current) {
+        const width = containerRef.current.clientWidth || 860;
+        const height = isTabMode ? (window.innerHeight - 150) : 280;
+        plotRef.current.setSize({ width, height });
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    // Run initial sizing after paint
+    const timer = setTimeout(handleResize, 100);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, [plotRef, containerRef, isTabMode, selectedSignals.length]);
+
   // ── Drag / zoom handlers ────────────────────────────────────────────────
   const handleMouseDown = (e: React.MouseEvent) => { dragStartXRef.current = e.clientX; };
   const handleMouseUp   = (e: React.MouseEvent) => {
@@ -190,6 +210,9 @@ export function SignalPlot() {
       background: 'var(--bg-elevated)',
       borderRadius: '8px',
       border: '1px solid var(--border-subtle)',
+      height: isTabMode ? '100%' : 'auto',
+      display: 'flex',
+      flexDirection: 'column',
     }}>
 
       {/* Header — signal pills + controls */}
@@ -351,6 +374,25 @@ export function SignalPlot() {
             }}
           >
             ↓ PNG
+          </button>
+        )}
+
+        {selectedSignals.length > 0 && !isTabMode && (
+          <button
+            onClick={() => window.open('?mode=plot', '_blank')}
+            title="Open plot in new browser tab"
+            style={{
+              background: 'none',
+              border: '1px solid var(--border-default)',
+              borderRadius: '4px',
+              color: 'var(--text-secondary)',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              padding: '3px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            ↗ Tab
           </button>
         )}
 

@@ -8,11 +8,12 @@ POST /disconnect - stop the interface cleanly
 GET  /status     - current connection state
 """
 
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from canviz.bus import bus_manager
 from canviz.config import settings
-from canviz.models import ConnectRequest, ConnectionStatus
+from canviz.models import ConnectRequest, ConnectionStatus, ActiveConnection
 from canviz.ws_broadcaster import broadcaster
 from canviz.stats_store import stats
 
@@ -21,22 +22,17 @@ router = APIRouter(tags=["connection"])
 
 @router.post("/connect", response_model=ConnectionStatus)
 async def connect(req: ConnectRequest):
-    # For gs_usb: channel field holds the device index (int, default 0)
-    # For slcan/socketcan: channel field holds the port string (e.g. "COM3")
     baudrate = req.baudrate
     if req.interface == "gs_usb":
-        index   = int(req.channel) if req.channel != "" else req.index
+        index   = int(req.channel) if req.channel != "" and str(req.channel).isdigit() else req.index
         channel = ""
     elif req.interface == "kvaser":
-        # python-can kvaser wants channel as an integer index
         index   = req.index
-        channel = int(req.channel) if req.channel not in ("", None) else req.index
+        channel = int(req.channel) if req.channel not in ("", None) and str(req.channel).isdigit() else req.index
     elif req.interface == "pcan":
-        # python-can pcan wants channel as a string e.g. "PCAN_USBBUS1"
         index   = req.index
         channel = str(req.channel) if req.channel else "PCAN_USBBUS1"
     elif req.interface in ("slcan", "seeedstudio"):
-        # Both are COM port devices — channel is the port string, no index needed
         index   = req.index
         channel = str(req.channel)
     else:
@@ -62,11 +58,18 @@ async def connect(req: ConnectRequest):
 
 
 @router.post("/disconnect", response_model=ConnectionStatus)
-async def disconnect():
-    bus_manager.remove_frame_callback(broadcaster.on_frame)
-    stats.on_disconnect()
-    broadcaster.clear_queue()
-    await bus_manager.disconnect()
+async def disconnect(connection_id: Optional[str] = None):
+    if connection_id:
+        await bus_manager.disconnect(connection_id)
+        if not bus_manager.connected:
+            bus_manager.remove_frame_callback(broadcaster.on_frame)
+            stats.on_disconnect()
+            broadcaster.clear_queue()
+    else:
+        bus_manager.remove_frame_callback(broadcaster.on_frame)
+        stats.on_disconnect()
+        broadcaster.clear_queue()
+        await bus_manager.disconnect()
     return _status()
 
 
@@ -76,11 +79,25 @@ async def status():
 
 
 def _status() -> ConnectionStatus:
+    conns = []
+    for conn_key, cfg in bus_manager._configs.items():
+        conns.append(
+            ActiveConnection(
+                id=conn_key,
+                interface=cfg.get("interface", ""),
+                channel=cfg.get("channel", ""),
+                bitrate=cfg.get("bitrate", 0),
+                index=cfg.get("index", 0),
+            )
+        )
+
+    first_conn = conns[0] if conns else None
     return ConnectionStatus(
-        connected=bus_manager.connected,
-        interface=settings.interface,
-        channel=settings.channel,
-        bitrate=settings.bitrate,
-        index=settings.index,
+        connected=len(conns) > 0,
+        interface=first_conn.interface if first_conn else "",
+        channel=first_conn.channel if first_conn else "",
+        bitrate=first_conn.bitrate if first_conn else 500000,
+        index=first_conn.index if first_conn else 0,
         error=bus_manager.error,
+        connections=conns,
     )

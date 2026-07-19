@@ -82,6 +82,7 @@ export interface CanFrame {
   timestamp: number;        // Unix epoch float (seconds)
   is_extended_id: boolean;
   is_fd: boolean;
+  channel?: string;
   // Backend key is "signals"; frameStore normalises to decoded_signals
   signals?: DecodedSignal[];
   decoded_signals?: DecodedSignal[];
@@ -112,6 +113,7 @@ export interface FrameRow {
   decodedSignals?: DecodedSignal[];
   j1939?: J1939Info;        // Present when J1939 mode is on and frame is extended
   canopen?: CANopenInfo;        // Present when CANopen mode is on
+  channel?: string;
 }
 
 // ============================================================
@@ -125,7 +127,7 @@ export type ConnectionStatus =
   | 'error'
   | 'disconnecting';
 
-export type InterfaceType = 'gs_usb' | 'slcan' | 'socketcan' | 'virtual' | 'pcan' | 'kvaser' | 'seeedstudio';
+export type InterfaceType = 'gs_usb' | 'slcan' | 'socketcan' | 'virtual' | 'pcan' | 'kvaser' | 'seeedstudio' | 'vector';
 
 export interface ConnectionConfig {
   interface: InterfaceType;
@@ -148,18 +150,17 @@ export interface ConnectionState {
 export interface DbcSignal {
   name: string;
   unit: string;
-  min_value: number;
-  max_value: number;
-  start_bit: number;
+  min: number | null;
+  max: number | null;
+  start: number;
   length: number;
-  scale: number;
-  offset: number;
 }
 
 export interface DbcMessage {
-  id: number;
+  id: string;
   name: string;
   length: number;
+  is_extended_frame: boolean;
   signals: DbcSignal[];
 }
 

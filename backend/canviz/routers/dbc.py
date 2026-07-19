@@ -34,6 +34,30 @@ async def get_messages():
     return {"loaded": True, "filename": dbc_store.path, "messages": dbc_store.messages_list()}
 
 
+from pydantic import BaseModel
+
+class EncodeRequest(BaseModel):
+    message_id: int
+    signals: dict[str, float]
+
+
+@router.post("/encode")
+async def encode_dbc_message(req: EncodeRequest):
+    if not dbc_store.loaded:
+        raise HTTPException(status_code=400, detail="No DBC file loaded.")
+    try:
+        assert dbc_store._db is not None
+        # get_message_by_frame_id raises KeyError if not found
+        message = dbc_store._db.get_message_by_frame_id(req.message_id)
+        # Encode signal dictionary to bytes
+        encoded = message.encode(req.signals, scaling=True, padding=True)
+        return {"data": list(encoded), "dlc": len(encoded)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Message ID {req.message_id} not found in DBC.")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.delete("")
 async def unload_dbc():
     dbc_store.unload()

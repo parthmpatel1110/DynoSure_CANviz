@@ -98,8 +98,9 @@ export const useFrameStore = create<FrameStore>((set, get) => ({
       isFd:           frame.is_fd,
       flashKey:       nowMs,
       decodedSignals: signals,
-      j1939:          frame.j1939,   // ← carry J1939 decode through to the table row
-      canopen:        frame.canopen,   // ← carry CANopen decode through to the table row
+      j1939:          frame.j1939,
+      canopen:        frame.canopen,
+      channel:        frame.channel,
     };
 
     if (signals?.length) {

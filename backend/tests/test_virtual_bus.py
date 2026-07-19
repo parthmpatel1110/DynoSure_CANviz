@@ -168,6 +168,23 @@ async def test_dbc_wrong_extension(client):
     assert r.status_code == 400
 
 
+async def test_dbc_encode_endpoint(client):
+    r = await client.post(
+        "/dbc/load",
+        files={"file": ("test.dbc", MINIMAL_DBC, "application/octet-stream")},
+    )
+    assert r.status_code == 200
+
+    r = await client.post(
+        "/dbc/encode",
+        json={"message_id": 256, "signals": {"RPM": 100.0, "Temp": 50.0}},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["dlc"] == 8
+    assert data["data"] == [0xC8, 0x00, 0x5A, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+
+
 # ── Log tests ─────────────────────────────────────────────────────────────────
 
 async def test_log_start_requires_connection(client):
@@ -198,3 +215,30 @@ async def test_log_double_start(client):
     r = await client.post("/log/start")
     assert r.status_code == 400
     await client.post("/log/stop")
+
+
+async def test_connect_multiple_virtual(client):
+    # 1. Connect first virtual bus
+    r = await client.post("/connect", json={"interface": "virtual", "index": 0})
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["connections"]) == 1
+
+    # 2. Connect second virtual bus
+    r = await client.post("/connect", json={"interface": "virtual", "index": 1})
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["connections"]) == 2
+
+    # 3. Disconnect one specific bus
+    conn_id = data["connections"][0]["id"]
+    r = await client.post(f"/disconnect?connection_id={conn_id}")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["connections"]) == 1
+
+    # 4. Disconnect all
+    r = await client.post("/disconnect")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["connections"]) == 0

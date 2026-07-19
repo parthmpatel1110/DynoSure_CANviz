@@ -75,6 +75,16 @@ const BASE_COLUMNS: ColumnDef<FrameRow>[] = [
     ),
   },
   {
+    accessorKey: 'channel',
+    header: 'Device',
+    size: 95,
+    cell: (info) => (
+      <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
+        {info.getValue<string>() || '—'}
+      </span>
+    ),
+  },
+  {
     accessorKey: 'dlc',
     header: 'DLC',
     size: 40,

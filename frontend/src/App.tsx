@@ -6,6 +6,8 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { MessageTable } from './components/MessageTable/MessageTable';
 import { BottomPanel } from './components/Layout/BottomPanel';
 import { ProtocolPanel } from './components/Layout/ProtocolPanel';
+import { SignalPlot } from './components/SignalPlot/SignalPlot';
+import { useDbcStore } from './store/dbcStore';
 
 const MIN_RIGHTPANEL = 240;
 const MAX_RIGHTPANEL = 1100;
@@ -22,6 +24,11 @@ function loadRightWidth(): number {
 export function App() {
   useStatusSync();
   useWebSocket();
+
+  // Fetch DBC messages on mount so that both main window and new tabs are populated
+  useEffect(() => {
+    useDbcStore.getState().fetchMessages();
+  }, []);
 
   const [rightWidth, setRightWidth] = useState<number>(loadRightWidth);
   const [dragging, setDragging]     = useState(false);
@@ -56,6 +63,17 @@ export function App() {
       window.removeEventListener('mouseup', onUp);
     };
   }, [dragging]);
+
+  // Check if we are running in standalone Plot mode (new tab)
+  const isPlotTab = window.location.search.includes('mode=plot');
+
+  if (isPlotTab) {
+    return (
+      <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: 16, boxSizing: 'border-box', overflow: 'hidden' }}>
+        <SignalPlot />
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

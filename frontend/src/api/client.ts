@@ -23,12 +23,17 @@ async function request<T>(
 // Connection
 // ============================================================
 
+export interface ConnectionStatusResponse {
+  connected: boolean;
+  interface: string;
+  channel: string;
+  bitrate: number;
+  index: number;
+  error: string | null;
+  connections: any[];
+}
+
 export function apiConnect(config: ConnectionConfig) {
-  // FIX: JSON.stringify(config) would send camelCase keys (serialBaudrate)
-  // but FastAPI's Pydantic model expects snake_case (serial_baudrate).
-  // Pydantic silently ignores unknown fields, so this was always falling
-  // back to the default 115200 regardless of what the UI selected.
-  // Map explicitly here so the backend receives the correct field name.
   const body = {
     interface:        config.interface,
     channel:          config.channel ?? '',
@@ -37,14 +42,15 @@ export function apiConnect(config: ConnectionConfig) {
     index:            config.index ?? 0,
   };
 
-  return request<{ message: string }>('/connect', {
+  return request<ConnectionStatusResponse>('/connect', {
     method: 'POST',
     body: JSON.stringify(body),
   });
 }
 
-export function apiDisconnect() {
-  return request<{ message: string }>('/disconnect', { method: 'POST' });
+export function apiDisconnect(connectionId?: string) {
+  const url = connectionId ? `/disconnect?connection_id=${connectionId}` : '/disconnect';
+  return request<ConnectionStatusResponse>(url, { method: 'POST' });
 }
 
 export function apiGetStatus() {
@@ -88,7 +94,14 @@ export async function apiLoadDbc(file: File) {
 }
 
 export function apiGetDbcMessages() {
-  return request<{ messages: unknown[] }>('/dbc/messages');
+  return request<{ messages: any[] }>('/dbc/messages');
+}
+
+export function apiEncodeDbcMessage(messageId: number, signals: Record<string, number>) {
+  return request<{ data: number[]; dlc: number }>('/dbc/encode', {
+    method: 'POST',
+    body: JSON.stringify({ message_id: messageId, signals }),
+  });
 }
 
 // ============================================================

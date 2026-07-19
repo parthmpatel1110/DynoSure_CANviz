@@ -41,27 +41,16 @@ log = logging.getLogger("canviz.bus")
 
 class BusManager:
     def __init__(self) -> None:
-        self._bus: Optional[can.BusABC] = None
-        self._reader_task: Optional[asyncio.Task] = None
-        self._connected: bool = False
-        self._error: Optional[str] = None
+        self._buses: dict[str, can.BusABC] = {}
+        self._reader_tasks: dict[str, asyncio.Task] = {}
+        self._configs: dict[str, dict] = {}
         self._frame_callbacks: list[Callable[[Message], None]] = []
         self._open_time: float = 0.0
-        # Track what the current open bus was configured with
-        self._open_interface: Optional[str] = None
-        self._open_channel: str = ""
-        self._open_bitrate: int = 0
-        self._open_index: int = 0
-        self._open_serial_baudrate: int = 0  
-        # Whether the hardware echoes sent frames back through recv() automatically.
-        # gs_usb (Candlelight) and virtual do. slcan and seeedstudio do not.
-        # When False, send() manually dispatches the frame through callbacks
-        # so sent frames appear in the UI message table.
-        self._echoes_sent_frames: bool = False
+        self._error: Optional[str] = None
 
     @property
     def connected(self) -> bool:
-        return self._connected
+        return len(self._buses) > 0
 
     @property
     def error(self) -> Optional[str]:
@@ -82,173 +71,172 @@ class BusManager:
         index: int = 0,
         baudrate: int = 115_200
     ) -> None:
-        if self._connected:
-            await self.disconnect()
-
         self._error = None
 
-        # Reuse existing bus if hardware settings are unchanged.
-        # This avoids the gs_usb/libusb handle-release race on Windows.
-        settings_match = (
-            self._bus is not None
-            and self._open_interface == interface
-            and self._open_channel == channel
-            and self._open_bitrate == bitrate
-            and self._open_index == index
-            and self._open_serial_baudrate == baudrate
-        )
+        # Build a unique connection key for this device configuration
+        ch_str = channel if channel else str(index)
+        conn_key = f"{interface}:{ch_str}"
 
-        if settings_match:
-            log.info(
-                "Reconnecting: reusing existing %s bus handle (no USB re-open).", interface
-            )
-        else:
-            # Settings changed — need a new hardware connection.
-            # Full teardown of the old bus first.
-            if self._bus is not None:
-                await self._hard_shutdown()
+        # If already connected to this configuration, reuse it
+        if conn_key in self._buses:
+            log.info("Already connected to %s. Reusing connection.", conn_key)
+            return
 
-            try:
-               
-                self._bus = _open_bus(interface, channel, bitrate, index, baudrate)
-            except Exception as exc:
-                self._error = str(exc)
-                log.error("Bus open failed: %s", exc)
-                raise
+        try:
+            bus = _open_bus(interface, channel, bitrate, index, baudrate)
+        except Exception as exc:
+            self._error = str(exc)
+            log.error("Bus open failed for %s: %s", conn_key, exc)
+            raise
 
-            self._open_interface = interface
-            self._open_channel   = channel
-            self._open_bitrate   = bitrate
-            self._open_serial_baudrate = baudrate
-            self._open_index     = index
+        self._buses[conn_key] = bus
+        self._configs[conn_key] = {
+            "interface": interface,
+            "channel": channel,
+            "bitrate": bitrate,
+            "index": index,
+            "baudrate": baudrate,
+            "echoes_sent_frames": interface in ("gs_usb", "virtual")
+        }
 
-        # gs_usb (Candlelight) and virtual echo sent frames back through recv()
-        # automatically so they appear in the UI via the reader loop.
-        # slcan and seeedstudio do not — send() will echo them manually.
-        self._echoes_sent_frames = interface in ("gs_usb", "virtual")
-
+        # Sync legacy settings helper
         settings.interface = interface
         settings.channel   = channel
         settings.bitrate   = bitrate
         settings.index     = index
 
-        self._open_time  = time.monotonic()
-        self._connected  = True
-        self._reader_task = asyncio.get_event_loop().create_task(
-            self._reader_loop(), name="can-reader"
+        if self._open_time == 0.0:
+            self._open_time = time.monotonic()
+
+        task = asyncio.get_event_loop().create_task(
+            self._reader_loop(conn_key, bus), name=f"can-reader-{conn_key}"
         )
+        self._reader_tasks[conn_key] = task
+
         log.info(
-            "Connected: interface=%s channel=%s bitrate=%d",
-            interface, channel, bitrate,
+            "Connected device %s: interface=%s channel=%s bitrate=%d",
+            conn_key, interface, channel, bitrate,
         )
 
-    async def disconnect(self) -> None:
+    async def disconnect(self, conn_key: Optional[str] = None) -> None:
         """
-        Soft disconnect — stops the reader loop, keeps the USB handle open.
-        Safe to call multiple times. Fast (no USB teardown).
+        Disconnect a specific bus connection by its key, or all of them if key is None.
         """
-        self._connected = False
+        if conn_key:
+            # Cancel reader task
+            if conn_key in self._reader_tasks:
+                task = self._reader_tasks.pop(conn_key)
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
-        if self._reader_task:
-            self._reader_task.cancel()
-            try:
-                await self._reader_task
-            except asyncio.CancelledError:
-                pass
-            self._reader_task = None
+            # Shutdown the hardware
+            if conn_key in self._buses:
+                bus = self._buses.pop(conn_key)
+                self._configs.pop(conn_key, None)
+                try:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, bus.shutdown)
+                    log.info("Hardware connection %s released.", conn_key)
+                except Exception as exc:
+                    log.warning("Bus shutdown error for %s: %s", conn_key, exc)
+        else:
+            # Disconnect all active connections
+            keys = list(self._buses.keys())
+            for key in keys:
+                await self.disconnect(key)
 
-        # Allow any in-flight recv() executor thread to return (recv timeout=0.1s)
-        await asyncio.sleep(0.15)
-
-        log.info("Disconnected.")
+            # Reset open time if all disconnected
+            self._open_time = 0.0
 
     async def _hard_shutdown(self) -> None:
-        """
-        Full hardware teardown — closes the USB handle.
-        Called on server shutdown or when interface settings change.
-        Not called on normal UI disconnect/reconnect cycles.
-        """
+        """Full teardown of all buses."""
         await self.disconnect()
+        # Sleep briefly to let OS release handles
+        await asyncio.sleep(1.0)
 
-        if self._bus is not None:
-            bus = self._bus
-            self._bus = None
-            self._open_interface = None
-            try:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, bus.shutdown)
-                log.info("Bus hardware released.")
-            except Exception as exc:
-                log.warning("Bus shutdown error: %s", exc)
+    async def send(self, arbitration_id: int, data: list[int], is_extended_id: bool = False, conn_key: Optional[str] = None) -> None:
+        if not self._buses:
+            raise RuntimeError("Not connected — call connect first")
 
-            # Give OS time to release the USB handle before any potential reopen
-            await asyncio.sleep(1.5)
+        target_keys = [conn_key] if conn_key and conn_key in self._buses else list(self._buses.keys())
 
-    async def send(self, arbitration_id: int, data: list[int], is_extended_id: bool = False) -> None:
-        if not self._connected or self._bus is None:
-            raise RuntimeError("Not connected — call /connect first")
         msg = can.Message(
             arbitration_id=arbitration_id,
             data=bytes(data),
             is_extended_id=is_extended_id,
         )
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._bus.send, msg)
 
-        # For interfaces that don't echo sent frames back through recv()
-        # (seeedstudio, slcan), manually dispatch the sent frame through the
-        # same callbacks the reader loop uses so it appears in the UI.
-        if not self._echoes_sent_frames:
-            msg.timestamp = time.monotonic() - self._open_time
-            for cb in list(self._frame_callbacks):
-                try:
-                    cb(msg)
-                except Exception as exc:
-                    log.warning("Frame callback error on tx echo: %s", exc)
+        for key in target_keys:
+            bus = self._buses[key]
+            try:
+                await loop.run_in_executor(None, bus.send, msg)
+                # Manually echo to UI if interface does not echo natively
+                cfg = self._configs.get(key, {})
+                if not cfg.get("echoes_sent_frames", False):
+                    msg_echo = can.Message(
+                        arbitration_id=arbitration_id,
+                        data=bytes(data),
+                        is_extended_id=is_extended_id,
+                        timestamp=time.monotonic() - self._open_time,
+                        channel=key
+                    )
+                    for cb in list(self._frame_callbacks):
+                        try:
+                            cb(msg_echo)
+                        except Exception as exc:
+                            log.warning("Frame callback error on tx echo: %s", exc)
+            except Exception as exc:
+                log.warning("Send failed on connection %s: %s", key, exc)
 
-    async def _reader_loop(self) -> None:
-        log.debug("Reader loop started.")
+    async def _reader_loop(self, conn_key: str, bus: can.BusABC) -> None:
+        log.debug("Reader loop started for connection %s.", conn_key)
         loop = asyncio.get_event_loop()
-        _consecutive_none = 0  # tracks silence for slcan diagnostic
+        _consecutive_none = 0
 
-        while self._connected and self._bus is not None:
+        cfg = self._configs.get(conn_key, {})
+        interface = cfg.get("interface", "")
+        serial_baudrate = cfg.get("baudrate", 115200)
+        bitrate = cfg.get("bitrate", 500000)
+
+        while conn_key in self._buses:
             try:
                 msg: Optional[Message] = await loop.run_in_executor(
-                    None, self._bus.recv, 0.1
+                    None, bus.recv, 0.1
                 )
             except Exception as exc:
-                log.warning("recv error: %s", exc)
+                log.warning("recv error on %s: %s", conn_key, exc)
                 await asyncio.sleep(0.1)
                 continue
 
             if msg is None:
                 _consecutive_none += 1
-                # After 30 s of silence on slcan, emit an actionable hint.
-                # Each loop iteration is ~0.1 s (recv timeout), so 300 = ~30 s.
                 if (
                     _consecutive_none == 300
-                    and self._open_interface == "slcan"
+                    and interface == "slcan"
                 ):
                     log.warning(
-                        "slcan: no frames received in ~30 s. "
+                        "slcan %s: no frames received in ~30 s. "
                         "Check: (1) CAN bitrate matches the bus (%d bps), "
-                        "(2) serial baud rate matches adapter (current: %d). "
-                        "Common fix: try Serial Baud Rate = 2000000 in the UI.",
-                        self._open_bitrate,
-                        self._open_serial_baudrate,
+                        "(2) serial baud rate matches adapter (current: %d).",
+                        conn_key, bitrate, serial_baudrate
                     )
                 continue
 
             _consecutive_none = 0
             msg.timestamp = time.monotonic() - self._open_time
+            msg.channel = conn_key  # Override python-can channel with our unique identifier
 
             for cb in list(self._frame_callbacks):
                 try:
                     cb(msg)
                 except Exception as exc:
-                    log.warning("Frame callback error: %s", exc)
+                    log.warning("Frame callback error on connection %s: %s", conn_key, exc)
 
-        log.debug("Reader loop exited.")
+        log.debug("Reader loop exited for connection %s.", conn_key)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -363,6 +351,14 @@ def _open_bus(
     elif interface == "kvaser":
         return can.Bus(interface="kvaser", channel=index, bitrate=bitrate)
 
+    elif interface == "vector":
+        ch = channel if channel else 0
+        try:
+            ch = int(ch)
+        except ValueError:
+            pass
+        return can.Bus(interface="vector", channel=ch, bitrate=bitrate)
+
     elif interface == "seeedstudio":
         if not channel:
             raise ValueError("seeedstudio requires a channel (e.g. COM8 or /dev/ttyUSB0)")
@@ -376,7 +372,7 @@ def _open_bus(
     else:
         raise ValueError(
             f"Unknown interface: {interface!r}. "
-            "Choose: gs_usb, slcan, socketcan, virtual, pcan, kvaser, seeedstudio"
+            "Choose: gs_usb, slcan, socketcan, virtual, pcan, kvaser, seeedstudio, vector"
         )
 
 
