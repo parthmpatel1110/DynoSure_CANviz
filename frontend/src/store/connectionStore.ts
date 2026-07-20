@@ -7,14 +7,13 @@ interface ConnectionStore {
   status: ConnectionStatus;
   config: ConnectionConfig;
   error: string | null;
-  activeConnections: any[];
 
   // Actions
   setStatus: (s: ConnectionStatus) => void;
   setConfig: (patch: Partial<ConnectionConfig>) => void;
   setInterface: (iface: InterfaceType) => void;
   connect: () => Promise<void>;
-  disconnect: (connId?: string) => Promise<void>;
+  disconnect: () => Promise<void>;
 }
 
 export const useConnectionStore = create<ConnectionStore>((set, get) => ({
@@ -26,7 +25,6 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     baudrate : 115200
   },
   error: null,
-  activeConnections: [],
 
   setStatus: (status) => set({ status }),
 
@@ -45,35 +43,30 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     })),
 
   connect: async () => {
-    const { config, activeConnections } = get();
+    const { config } = get();
     set({ status: 'connecting', error: null });
-    
-    // Clear stale frames only when opening the FIRST connection of the session
-    if (activeConnections.length === 0) {
-      useFrameStore.getState().clearFrames();
-    }
-
+    // Clear stale frames at the START of a new session so the table
+    // fills with fresh data.
+    useFrameStore.getState().clearFrames();
     try {
       const res = await apiConnect(config);
-      set({ 
-        status: res.connected ? 'connected' : 'idle',
-        activeConnections: res.connections || [] 
-      });
+      if (res && res.connected) {
+        set({ status: 'connected', error: null });
+      } else {
+        set({ status: 'error', error: res?.error || 'Connection failed' });
+      }
     } catch (e) {
       set({ status: 'error', error: (e as Error).message });
     }
   },
 
-  disconnect: async (connId?: string) => {
+  disconnect: async () => {
     set({ status: 'disconnecting', error: null });
     try {
-      const res = await apiDisconnect(connId);
-      set({
-        status: res.connected ? 'connected' : 'idle',
-        activeConnections: res.connections || []
-      });
+      await apiDisconnect();
     } catch {
-      set({ status: 'idle', activeConnections: [] });
+      // Ignore — always transition to idle
     }
+    set({ status: 'idle' });
   },
 }));

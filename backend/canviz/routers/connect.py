@@ -8,11 +8,11 @@ POST /disconnect - stop the interface cleanly
 GET  /status     - current connection state
 """
 
-from typing import Optional
 from fastapi import APIRouter, HTTPException
 
 from canviz.bus import bus_manager
-from canviz.models import ConnectRequest, ConnectionStatus, ActiveConnection
+from canviz.config import settings
+from canviz.models import ConnectRequest, ConnectionStatus
 from canviz.ws_broadcaster import broadcaster
 from canviz.stats_store import stats
 
@@ -57,18 +57,11 @@ async def connect(req: ConnectRequest):
 
 
 @router.post("/disconnect", response_model=ConnectionStatus)
-async def disconnect(connection_id: Optional[str] = None):
-    if connection_id:
-        await bus_manager.disconnect(connection_id)
-        if not bus_manager.connected:
-            bus_manager.remove_frame_callback(broadcaster.on_frame)
-            stats.on_disconnect()
-            broadcaster.clear_queue()
-    else:
-        bus_manager.remove_frame_callback(broadcaster.on_frame)
-        stats.on_disconnect()
-        broadcaster.clear_queue()
-        await bus_manager.disconnect()
+async def disconnect():
+    bus_manager.remove_frame_callback(broadcaster.on_frame)
+    stats.on_disconnect()
+    broadcaster.clear_queue()
+    await bus_manager.disconnect()
     return _status()
 
 
@@ -78,25 +71,11 @@ async def status():
 
 
 def _status() -> ConnectionStatus:
-    conns = []
-    for conn_key, cfg in bus_manager._configs.items():
-        conns.append(
-            ActiveConnection(
-                id=conn_key,
-                interface=cfg.get("interface", ""),
-                channel=cfg.get("channel", ""),
-                bitrate=cfg.get("bitrate", 0),
-                index=cfg.get("index", 0),
-            )
-        )
-
-    first_conn = conns[0] if conns else None
     return ConnectionStatus(
-        connected=len(conns) > 0,
-        interface=first_conn.interface if first_conn else "",
-        channel=first_conn.channel if first_conn else "",
-        bitrate=first_conn.bitrate if first_conn else 500000,
-        index=first_conn.index if first_conn else 0,
+        connected=bus_manager.connected,
+        interface=settings.interface,
+        channel=settings.channel,
+        bitrate=settings.bitrate,
+        index=settings.index,
         error=bus_manager.error,
-        connections=conns,
     )

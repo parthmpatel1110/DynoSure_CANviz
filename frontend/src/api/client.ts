@@ -30,7 +30,6 @@ export interface ConnectionStatusResponse {
   bitrate: number;
   index: number;
   error: string | null;
-  connections: any[];
 }
 
 export function apiConnect(config: ConnectionConfig) {
@@ -48,9 +47,8 @@ export function apiConnect(config: ConnectionConfig) {
   });
 }
 
-export function apiDisconnect(connectionId?: string) {
-  const url = connectionId ? `/disconnect?connection_id=${connectionId}` : '/disconnect';
-  return request<ConnectionStatusResponse>(url, { method: 'POST' });
+export function apiDisconnect() {
+  return request<ConnectionStatusResponse>('/disconnect', { method: 'POST' });
 }
 
 export function apiGetStatus() {

@@ -100,7 +100,6 @@ export const useFrameStore = create<FrameStore>((set, get) => ({
       decodedSignals: signals,
       j1939:          frame.j1939,
       canopen:        frame.canopen,
-      channel:        frame.channel,
     };
 
     if (signals?.length) {

@@ -46,11 +46,9 @@ export function ConnectionPanel() {
   const totalFrames  = useFrameStore((s) => s.totalFramesReceived);
   const clearFrames  = useFrameStore((s) => s.clearFrames);
 
-  const activeConnections = useConnectionStore((s) => s.activeConnections || []);
-
   const isConnected   = status === 'connected';
   const isBusy        = status === 'connecting' || status === 'disconnecting';
-  const canConnect    = !isBusy;
+  const canConnect    = !isConnected && !isBusy;
   const canDisconnect = isConnected && !isBusy;
 
   const selectedIface = INTERFACES.find((i) => i.value === config.interface);
@@ -230,54 +228,11 @@ export function ConnectionPanel() {
         <button
           className="btn btn-danger"
           disabled={!canDisconnect}
-          onClick={() => disconnect()}
+          onClick={disconnect}
         >
-          {status === 'disconnecting' ? '…' : 'Disconnect All'}
+          {status === 'disconnecting' ? '…' : 'Disconnect'}
         </button>
       </div>
-
-      {/* Active Connections List */}
-      {activeConnections.length > 0 && (
-        <>
-          <div className="divider" style={{ marginTop: 12 }} />
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 'bold', marginBottom: 6, letterSpacing: '0.04em', fontFamily: 'var(--font-mono)' }}>
-            ACTIVE DEVICES ({activeConnections.length})
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {activeConnections.map((conn) => (
-              <div
-                key={conn.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: 'var(--bg-elevated)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '4px 6px',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <span className="mono text-xs" style={{ color: 'var(--accent-green)', fontWeight: 500 }}>
-                    {conn.interface.toUpperCase()}
-                  </span>
-                  <span className="text-xxs text-muted mono" style={{ fontSize: 9 }}>
-                    {conn.channel || `Idx ${conn.index}`} @ {conn.bitrate / 1000}k
-                  </span>
-                </div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ color: '#ef4444', fontSize: 10, padding: '2px 4px' }}
-                  onClick={() => disconnect(conn.id)}
-                  title="Disconnect device"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
 
       {/* Clear buffer - only useful when connected or after a session */}
       {totalFrames > 0 && (

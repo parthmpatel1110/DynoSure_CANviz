@@ -18,16 +18,8 @@ class CANFrame(BaseModel):
     timestamp: float               # Seconds since bus open
     is_extended_id: bool = False
     is_fd: bool = False            # True for CAN FD frames (Phase 4)
-    channel: str = "0"
+    channel: int = 0
     signals: dict[str, float] = {}  # Populated if a DBC is loaded
-
-
-class ActiveConnection(BaseModel):
-    id: str
-    interface: str
-    channel: str
-    bitrate: int
-    index: int
 
 
 class ConnectionStatus(BaseModel):
@@ -37,7 +29,6 @@ class ConnectionStatus(BaseModel):
     bitrate: int
     index: int
     error: Optional[str] = None
-    connections: list[ActiveConnection] = []
 
 
 class ConnectRequest(BaseModel):

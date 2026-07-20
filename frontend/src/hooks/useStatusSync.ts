@@ -18,13 +18,11 @@ interface StatusResponse {
   bitrate?: number;
   index?: number;
   serial_baudrate?: number;
-  connections?: any[];
 }
 
 export function useStatusSync() {
   const setStatus = useConnectionStore((s) => s.setStatus);
   const setConfig = useConnectionStore((s) => s.setConfig);
-  const currentStatus = useConnectionStore((s) => s.status);
 
   const sync = useCallback(async () => {
     try {
@@ -32,6 +30,7 @@ export function useStatusSync() {
       if (!res.ok) return;
 
       const data: StatusResponse = await res.json();
+      const currentStatus = useConnectionStore.getState().status;
 
       if (data.connected) {
         // Backend is connected - update store so TopBar and stats render
@@ -43,15 +42,11 @@ export function useStatusSync() {
             index: data.index ?? 0,
           });
         }
-        if (data.connections) {
-          useConnectionStore.setState({ activeConnections: data.connections });
-        }
         // Only flip to connected if we aren't already (avoids flickering)
-        if (currentStatus !== 'connected') {
+        if (currentStatus !== 'connected' && currentStatus !== 'connecting') {
           setStatus('connected');
         }
       } else {
-        useConnectionStore.setState({ activeConnections: [] });
         // Backend is disconnected - if we thought we were connected, correct it
         if (currentStatus === 'connected') {
           setStatus('idle');
@@ -60,7 +55,7 @@ export function useStatusSync() {
     } catch {
       // Network error or timeout - leave store as-is
     }
-  }, [setStatus, setConfig, currentStatus]);
+  }, [setStatus, setConfig]);
 
   // Sync on mount
   useEffect(() => {

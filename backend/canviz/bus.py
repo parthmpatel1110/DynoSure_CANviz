@@ -41,16 +41,22 @@ log = logging.getLogger("canviz.bus")
 
 class BusManager:
     def __init__(self) -> None:
-        self._buses: dict[str, can.BusABC] = {}
-        self._reader_tasks: dict[str, asyncio.Task] = {}
-        self._configs: dict[str, dict] = {}
+        self._bus: Optional[can.BusABC] = None
+        self._reader_task: Optional[asyncio.Task] = None
+        self._connected: bool = False
+        self._error: Optional[str] = None
         self._frame_callbacks: list[Callable[[Message], None]] = []
         self._open_time: float = 0.0
-        self._error: Optional[str] = None
+        self._open_interface: Optional[str] = None
+        self._open_channel: str = ""
+        self._open_bitrate: int = 0
+        self._open_index: int = 0
+        self._open_serial_baudrate: int = 0  
+        self._echoes_sent_frames: bool = False
 
     @property
     def connected(self) -> bool:
-        return len(self._buses) > 0
+        return self._connected
 
     @property
     def error(self) -> Optional[str]:
@@ -71,144 +77,113 @@ class BusManager:
         index: int = 0,
         baudrate: int = 115_200
     ) -> None:
+        if self._connected or self._bus is not None:
+            await self.disconnect()
+
         self._error = None
 
-        # Build a unique connection key for this device configuration
-        ch_str = channel if channel else str(index)
-        conn_key = f"{interface}:{ch_str}"
-
-        # If already connected to this configuration, reuse it
-        if conn_key in self._buses:
-            log.info("Already connected to %s. Reusing connection.", conn_key)
-            return
-
         try:
-            bus = _open_bus(interface, channel, bitrate, index, baudrate)
+            self._bus = _open_bus(interface, channel, bitrate, index, baudrate)
         except Exception as exc:
             self._error = str(exc)
-            log.error("Bus open failed for %s: %s", conn_key, exc)
+            log.error("Bus open failed: %s", exc)
             raise
 
-        self._buses[conn_key] = bus
-        self._configs[conn_key] = {
-            "interface": interface,
-            "channel": channel,
-            "bitrate": bitrate,
-            "index": index,
-            "baudrate": baudrate,
-            "echoes_sent_frames": interface in ("gs_usb", "virtual")
-        }
+        self._open_interface = interface
+        self._open_channel   = channel
+        self._open_bitrate   = bitrate
+        self._open_serial_baudrate = baudrate
+        self._open_index     = index
 
-        # Sync legacy settings helper
+        self._echoes_sent_frames = interface in ("gs_usb", "virtual")
+
         settings.interface = interface
         settings.channel   = channel
         settings.bitrate   = bitrate
         settings.index     = index
 
-        if self._open_time == 0.0:
-            self._open_time = time.monotonic()
-
-        task = asyncio.get_event_loop().create_task(
-            self._reader_loop(conn_key, bus), name=f"can-reader-{conn_key}"
+        self._open_time  = time.monotonic()
+        self._connected  = True
+        self._reader_task = asyncio.get_event_loop().create_task(
+            self._reader_loop(), name="can-reader"
         )
-        self._reader_tasks[conn_key] = task
-
         log.info(
-            "Connected device %s: interface=%s channel=%s bitrate=%d",
-            conn_key, interface, channel, bitrate,
+            "Connected: interface=%s channel=%s bitrate=%d",
+            interface, channel, bitrate,
         )
 
-    async def disconnect(self, conn_key: Optional[str] = None) -> None:
+    async def disconnect(self) -> None:
         """
-        Disconnect a specific bus connection by its key, or all of them if key is None.
+        Hard disconnect — cancels reader task, closes hardware bus handle,
+        and releases device resources completely.
         """
-        if conn_key:
-            # Cancel reader task
-            if conn_key in self._reader_tasks:
-                task = self._reader_tasks.pop(conn_key)
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        self._connected = False
 
-            # Shutdown the hardware
-            if conn_key in self._buses:
-                bus = self._buses.pop(conn_key)
-                self._configs.pop(conn_key, None)
-                try:
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, bus.shutdown)
-                    log.info("Hardware connection %s released.", conn_key)
-                except Exception as exc:
-                    log.warning("Bus shutdown error for %s: %s", conn_key, exc)
-        else:
-            # Disconnect all active connections
-            keys = list(self._buses.keys())
-            for key in keys:
-                await self.disconnect(key)
+        if self._reader_task:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+            self._reader_task = None
 
-            # Reset open time if all disconnected
-            self._open_time = 0.0
+        if self._bus is not None:
+            bus = self._bus
+            self._bus = None
+            self._open_interface = None
+            self._open_channel = ""
+            self._open_bitrate = 0
+            self._open_index = 0
+            self._open_serial_baudrate = 0
+
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, _release_bus_resources, bus)
+                log.info("Bus hardware released.")
+            except Exception as exc:
+                log.warning("Bus release error: %s", exc)
+
+            await asyncio.sleep(0.5)
+
+        log.info("Disconnected.")
 
     async def _hard_shutdown(self) -> None:
-        """Full teardown of all buses."""
+        """
+        Full hardware teardown.
+        """
         await self.disconnect()
-        # Sleep briefly to let OS release handles
-        await asyncio.sleep(1.0)
 
-    async def send(self, arbitration_id: int, data: list[int], is_extended_id: bool = False, conn_key: Optional[str] = None) -> None:
-        if not self._buses:
-            raise RuntimeError("Not connected — call connect first")
-
-        target_keys = [conn_key] if conn_key and conn_key in self._buses else list(self._buses.keys())
-
+    async def send(self, arbitration_id: int, data: list[int], is_extended_id: bool = False) -> None:
+        if not self._connected or self._bus is None:
+            raise RuntimeError("Not connected — call /connect first")
         msg = can.Message(
             arbitration_id=arbitration_id,
             data=bytes(data),
             is_extended_id=is_extended_id,
         )
         loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._bus.send, msg)
 
-        for key in target_keys:
-            bus = self._buses[key]
-            try:
-                await loop.run_in_executor(None, bus.send, msg)
-                # Manually echo to UI if interface does not echo natively
-                cfg = self._configs.get(key, {})
-                if not cfg.get("echoes_sent_frames", False):
-                    msg_echo = can.Message(
-                        arbitration_id=arbitration_id,
-                        data=bytes(data),
-                        is_extended_id=is_extended_id,
-                        timestamp=time.monotonic() - self._open_time,
-                        channel=key
-                    )
-                    for cb in list(self._frame_callbacks):
-                        try:
-                            cb(msg_echo)
-                        except Exception as exc:
-                            log.warning("Frame callback error on tx echo: %s", exc)
-            except Exception as exc:
-                log.warning("Send failed on connection %s: %s", key, exc)
+        if not self._echoes_sent_frames:
+            msg.timestamp = time.monotonic() - self._open_time
+            for cb in list(self._frame_callbacks):
+                try:
+                    cb(msg)
+                except Exception as exc:
+                    log.warning("Frame callback error on tx echo: %s", exc)
 
-    async def _reader_loop(self, conn_key: str, bus: can.BusABC) -> None:
-        log.debug("Reader loop started for connection %s.", conn_key)
+    async def _reader_loop(self) -> None:
+        log.debug("Reader loop started.")
         loop = asyncio.get_event_loop()
         _consecutive_none = 0
 
-        cfg = self._configs.get(conn_key, {})
-        interface = cfg.get("interface", "")
-        serial_baudrate = cfg.get("baudrate", 115200)
-        bitrate = cfg.get("bitrate", 500000)
-
-        while conn_key in self._buses:
+        while self._connected and self._bus is not None:
             try:
                 msg: Optional[Message] = await loop.run_in_executor(
-                    None, bus.recv, 0.1
+                    None, self._bus.recv, 0.1
                 )
             except Exception as exc:
-                log.warning("recv error on %s: %s", conn_key, exc)
+                log.warning("recv error: %s", exc)
                 await asyncio.sleep(0.1)
                 continue
 
@@ -216,27 +191,28 @@ class BusManager:
                 _consecutive_none += 1
                 if (
                     _consecutive_none == 300
-                    and interface == "slcan"
+                    and self._open_interface == "slcan"
                 ):
                     log.warning(
-                        "slcan %s: no frames received in ~30 s. "
+                        "slcan: no frames received in ~30 s. "
                         "Check: (1) CAN bitrate matches the bus (%d bps), "
-                        "(2) serial baud rate matches adapter (current: %d).",
-                        conn_key, bitrate, serial_baudrate
+                        "(2) serial baud rate matches adapter (current: %d). "
+                        "Common fix: try Serial Baud Rate = 2000000 in the UI.",
+                        self._open_bitrate,
+                        self._open_serial_baudrate,
                     )
                 continue
 
             _consecutive_none = 0
             msg.timestamp = time.monotonic() - self._open_time
-            msg.channel = conn_key  # Override python-can channel with our unique identifier
 
             for cb in list(self._frame_callbacks):
                 try:
                     cb(msg)
                 except Exception as exc:
-                    log.warning("Frame callback error on connection %s: %s", conn_key, exc)
+                    log.warning("Frame callback error: %s", exc)
 
-        log.debug("Reader loop exited for connection %s.", conn_key)
+        log.debug("Reader loop exited.")
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -299,11 +275,58 @@ def _ensure_libusb() -> None:
         raise ImportError(
             f"pyusb could not find a libusb backend: {exc}\n\n"
             "Fix (Windows):\n"
-            "  1. pip install libusb\n"
             "  2. If that still fails, download libusb-1.0.dll from https://libusb.info\n"
             "     and place it next to python.exe\n"
             "     (e.g. C:\\Users\\<you>\\AppData\\Local\\Programs\\Python\\Python312\\)\n"
         ) from exc
+
+
+def _release_bus_resources(bus: can.BusABC) -> None:
+    # 1. Handle gs_usb specially to avoid python-can't GsUsb.scan() re-open bug on Windows
+    if hasattr(bus, "gs_usb"):
+        try:
+            if hasattr(bus.gs_usb, "stop"):
+                bus.gs_usb.stop()
+        except Exception as exc:
+            log.debug("gs_usb.stop error: %s", exc)
+
+        try:
+            if hasattr(bus, "_is_shutdown"):
+                bus._is_shutdown = True
+        except Exception:
+            pass
+
+        try:
+            if hasattr(bus.gs_usb, "gs_usb"):
+                import usb.util
+                usb.util.dispose_resources(bus.gs_usb.gs_usb)
+                log.debug("Disposed pyusb resources for gs_usb")
+        except Exception as exc:
+            log.debug("dispose_resources error: %s", exc)
+
+    # 2. Shutdown standard bus
+    try:
+        bus.shutdown()
+    except Exception as exc:
+        log.debug("bus.shutdown() warning: %s", exc)
+
+    # 3. Clean up any remaining scanned pyusb devices for gs_usb
+    try:
+        import usb.core
+        import usb.util
+        import can.interfaces.gs_usb
+        devs = usb.core.find(
+            find_all=True,
+            custom_match=can.interfaces.gs_usb.GsUsb.is_gs_usb_device,
+        )
+        if devs:
+            for dev in devs:
+                try:
+                    usb.util.dispose_resources(dev)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 def _open_bus(
