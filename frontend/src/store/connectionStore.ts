@@ -38,7 +38,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
         interface: iface,
         // Reset interface-specific fields when switching
         channel:        (iface === 'slcan' || iface === 'seeedstudio') ? (s.config.channel ?? 'COM3') : undefined,
-        index:          (iface === 'gs_usb' || iface === 'kvaser') ? (s.config.index ?? 0) : undefined,
+        index:          (iface === 'gs_usb' || iface === 'kvaser' || iface === 'dynosure-slcan') ? (s.config.index ?? 0) : undefined,
       },
     })),
 

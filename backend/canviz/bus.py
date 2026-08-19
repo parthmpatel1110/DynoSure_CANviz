@@ -95,7 +95,7 @@ class BusManager:
         self._open_serial_baudrate = baudrate
         self._open_index     = index
 
-        self._echoes_sent_frames = interface in ("gs_usb", "virtual")
+        self._echoes_sent_frames = interface in ("gs_usb", "virtual", "dynosure-slcan")
 
         settings.interface = interface
         settings.channel   = channel
@@ -336,7 +336,32 @@ def _open_bus(
     index: int,
     serial_baudrate: int = 115200,
 ) -> can.BusABC:
-    if interface == "gs_usb":
+    if interface == "dynosure-slcan":
+        _ensure_libusb()
+        from can.interfaces.gs_usb import GsUsb
+        devs = GsUsb.scan()
+        if len(devs) <= index:
+            raise ValueError(f"No device found at index {index}")
+        
+        gs_dev = devs[index]
+        prod = ""
+        mfg = ""
+        try:
+            prod = getattr(gs_dev.gs_usb, "product", "") or ""
+            mfg = getattr(gs_dev.gs_usb, "manufacturer", "") or ""
+        except Exception as exc:
+            log.warning("Could not read USB descriptors: %s", exc)
+
+        dev_desc = f"{prod} {mfg}".lower()
+        log.info("Checking DynoSure interlock: Product='%s', Manufacturer='%s'", prod, mfg)
+
+        if "dynosure" not in dev_desc:
+            raise ValueError(
+                f"Interlock failed: Device at index {index} ('{prod}') is not a DynoSure device."
+            )
+        return can.Bus(interface="gs_usb", channel=index, bitrate=bitrate)
+
+    elif interface == "gs_usb":
         _ensure_libusb()
         return can.Bus(interface="gs_usb", channel=index, bitrate=bitrate)
 

@@ -22,7 +22,7 @@ router = APIRouter(tags=["connection"])
 @router.post("/connect", response_model=ConnectionStatus)
 async def connect(req: ConnectRequest):
     baudrate = req.baudrate
-    if req.interface == "gs_usb":
+    if req.interface in ("gs_usb", "dynosure-slcan"):
         index   = int(req.channel) if req.channel != "" and str(req.channel).isdigit() else req.index
         channel = ""
     elif req.interface == "kvaser":

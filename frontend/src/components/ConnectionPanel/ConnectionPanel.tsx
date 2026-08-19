@@ -24,6 +24,7 @@ const BAUDRATES = [
 ];
 
 const INTERFACES: { label: string; value: InterfaceType; hint: string }[] = [
+  { value: 'dynosure-slcan', label: 'DynoSure - SLCAN',                   hint: 'DynoSure CAN adapter - no COM port' },
   { value: 'gs_usb',      label: 'gs_usb (Candlelight)',        hint: 'FYSETC UCAN, CANable 2.0 Pro - no COM port' },
   { value: 'slcan',       label: 'slcan (COM port)',             hint: 'CANable slcan firmware - appears as COM3 etc.' },
   { value: 'seeedstudio', label: 'USB-CAN Analyzer (GY/Seeed)', hint: 'Cheap USB CAN analyzers with 0xAA/0x55 binary protocol - appears as COM port. No baud rate config needed.' },
@@ -32,6 +33,7 @@ const INTERFACES: { label: string; value: InterfaceType; hint: string }[] = [
   { value: 'pcan',        label: 'PCAN (PEAK)',                  hint: 'PEAK PCAN-USB - requires PEAK driver installed. Shows as CAN-Hardware in Device Manager.' },
   { value: 'kvaser',      label: 'Kvaser',                       hint: 'Kvaser hardware - requires Kvaser CANlib installed. Shows as CAN-Hardware (Kvaser) in Device Manager.' },
   { value: 'vector',      label: 'Vector CAN',                   hint: 'Vector CAN hardware - requires Vector driver installed. Channel can be index (e.g. 0, 1) or name (e.g. CAN1).' },
+  
 ];
 
 export function ConnectionPanel() {
@@ -73,8 +75,8 @@ export function ConnectionPanel() {
         )}
       </div>
 
-      {/* gs_usb: device index */}
-      {config.interface === 'gs_usb' && (
+      {/* gs_usb / dynosure-slcan: device index */}
+      {(config.interface === 'gs_usb' || config.interface === 'dynosure-slcan') && (
         <div className="field-group">
           <label className="field-label">Device Index</label>
           <input
