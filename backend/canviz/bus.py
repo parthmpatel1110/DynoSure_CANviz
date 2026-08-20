@@ -129,19 +129,19 @@ class BusManager:
 
         if self._bus is not None:
             bus = self._bus
-            self._bus = None
-            self._open_interface = None
-            self._open_channel = ""
-            self._open_bitrate = 0
-            self._open_index = 0
-            self._open_serial_baudrate = 0
-
             try:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, _release_bus_resources, bus)
                 log.info("Bus hardware released.")
             except Exception as exc:
                 log.warning("Bus release error: %s", exc)
+
+            self._bus = None
+            self._open_interface = None
+            self._open_channel = ""
+            self._open_bitrate = 0
+            self._open_index = 0
+            self._open_serial_baudrate = 0
 
             await asyncio.sleep(0.5)
 
@@ -285,17 +285,20 @@ def _release_bus_resources(bus: can.BusABC) -> None:
     # 1. Handle gs_usb specially to avoid python-can't GsUsb.scan() re-open bug on Windows
     if hasattr(bus, "gs_usb"):
         try:
-            if hasattr(bus.gs_usb, "stop"):
-                bus.gs_usb.stop()
-        except Exception as exc:
-            log.debug("gs_usb.stop error: %s", exc)
-
-        try:
-            if hasattr(bus, "_is_shutdown"):
-                bus._is_shutdown = True
+            # Set _index to None to bypass buggy scan block in python-can't shutdown()
+            if hasattr(bus, "_index"):
+                bus._index = None
         except Exception:
             pass
 
+    # 2. Shutdown standard bus (this now runs fully/properly since _is_shutdown is False)
+    try:
+        bus.shutdown()
+    except Exception as exc:
+        log.debug("bus.shutdown() warning: %s", exc)
+
+    # 3. Explicitly release pyusb / libusb C handle for the device
+    if hasattr(bus, "gs_usb"):
         try:
             if hasattr(bus.gs_usb, "gs_usb"):
                 import usb.util
@@ -303,12 +306,6 @@ def _release_bus_resources(bus: can.BusABC) -> None:
                 log.debug("Disposed pyusb resources for gs_usb")
         except Exception as exc:
             log.debug("dispose_resources error: %s", exc)
-
-    # 2. Shutdown standard bus
-    try:
-        bus.shutdown()
-    except Exception as exc:
-        log.debug("bus.shutdown() warning: %s", exc)
 
     # 3. Clean up any remaining scanned pyusb devices for gs_usb
     try:
@@ -329,6 +326,130 @@ def _release_bus_resources(bus: can.BusABC) -> None:
         pass
 
 
+import queue
+from typing import Tuple
+
+class DynoSureSlcanBus(can.BusABC):
+    def __init__(self, channel: str = "", bitrate: int = 500000, index: int = 0, **kwargs):
+        super().__init__(channel=channel, **kwargs)
+        
+        import slcanv1
+        self._slcan = slcanv1.SlcanV2()
+        self._queue = queue.Queue()
+        self._port = None
+        
+        devs = self._slcan.enum_devices()
+        if not devs:
+            raise ValueError("No DynoSure devices found on USB")
+            
+        selected_dev = None
+        scanned_details = []
+        for dev in devs:
+            disp_name = getattr(dev, "displayName", b"").decode("utf-8", errors="ignore")
+            serial_no = getattr(dev, "serialNo", b"").decode("utf-8", errors="ignore")
+            path_str = getattr(dev, "devicePath", b"").decode("utf-8", errors="ignore")
+            
+            desc_text = f"{disp_name} {serial_no} {path_str}".lower()
+            scanned_details.append(f"Name: {disp_name}, Serial: {serial_no}")
+            
+            if "dynosure" in desc_text or "can fd interface" in desc_text:
+                if channel:
+                    if channel in disp_name or channel in serial_no or channel in path_str:
+                        selected_dev = dev
+                        break
+                else:
+                    selected_dev = dev
+                    break
+        
+        if not selected_dev:
+            if not channel and index < len(devs):
+                selected_dev = devs[index]
+            else:
+                scanned_summary = "; ".join(scanned_details)
+                raise ValueError(
+                    f"Interlock failed: No compatible device ('dynosure' or 'can fd interface') found. "
+                    f"Scanned devices: [{scanned_summary}]"
+                )
+                
+        self._port = selected_dev.devicePath
+        
+        rc = self._slcan.open_port(self._port)
+        if rc != 1:
+            raise ValueError(f"Failed to open DynoSure port {self._port.decode('utf-8', errors='ignore')}")
+            
+        # Set bitrate using 160 MHz clock calculations
+        brp = int(8_000_000 / bitrate)
+        rc = self._slcan.set_bitrate_advanced(is_fd=0, brp=brp, seg1=15, seg2=4, port_name=self._port)
+        if rc != 0:
+            self._slcan.close(self._port)
+            raise ValueError(f"Failed to set bitrate {bitrate} (brp={brp})")
+            
+        def _rx_wrapper(packet_ptr):
+            try:
+                pkt = packet_ptr.contents
+                data_len = pkt.dlc
+                msg = can.Message(
+                    arbitration_id=pkt.id,
+                    is_extended_id=bool(pkt.ext),
+                    is_fd=bool(pkt.fd),
+                    is_remote_frame=bool(pkt.rtr),
+                    dlc=data_len,
+                    data=bytes(pkt.data[:data_len]),
+                    timestamp=pkt.timestamp / 1000000.0,
+                    channel=self.channel_info
+                )
+                self._queue.put(msg)
+            except Exception:
+                pass
+                
+        self._slcan.set_rx_callback(_rx_wrapper, port_name=self._port)
+        
+        # Start in loopback mode (SLCANV2_FLAG_LOOPBACK = 2)
+        rc = self._slcan.start_with_flags(2, self._port)
+        if rc != 0:
+            self._slcan.close(self._port)
+            raise ValueError("Failed to start DynoSure adapter in loopback mode")
+            
+        self.channel_info = selected_dev.displayName.decode("utf-8", errors="ignore")
+        
+    def _recv_internal(self, timeout: Optional[float]) -> Tuple[Optional[can.Message], bool]:
+        try:
+            msg = self._queue.get(timeout=timeout)
+            return msg, False
+        except queue.Empty:
+            return None, False
+            
+    def send(self, msg: can.Message, timeout: Optional[float] = None) -> None:
+        if not self._port:
+            raise RuntimeError("Port not opened")
+            
+        import slcanv1
+        pkt = slcanv1.SlcanV2.PacketFD()
+        pkt.id = msg.arbitration_id
+        pkt.dlc = msg.dlc
+        pkt.ext = 1 if msg.is_extended_id else 0
+        pkt.fd = 1 if msg.is_fd else 0
+        pkt.rtr = 1 if msg.is_remote_frame else 0
+        
+        for i, val in enumerate(msg.data):
+            pkt.data[i] = val
+            
+        timeout_ms = int(timeout * 1000) if timeout else 100
+        rc = self._slcan.send_packet(pkt, timeout_ms, self._port)
+        if rc != 0:
+            raise RuntimeError(f"Failed to transmit packet: error code {rc}")
+            
+    def shutdown(self) -> None:
+        super().shutdown()
+        if self._port:
+            port = self._port
+            self._port = None
+            try:
+                self._slcan.close(port)
+            except Exception:
+                pass
+
+
 def _open_bus(
     interface: InterfaceType,
     channel: str,
@@ -338,28 +459,7 @@ def _open_bus(
 ) -> can.BusABC:
     if interface == "dynosure-slcan":
         _ensure_libusb()
-        from can.interfaces.gs_usb import GsUsb
-        devs = GsUsb.scan()
-        if len(devs) <= index:
-            raise ValueError(f"No device found at index {index}")
-        
-        gs_dev = devs[index]
-        prod = ""
-        mfg = ""
-        try:
-            prod = getattr(gs_dev.gs_usb, "product", "") or ""
-            mfg = getattr(gs_dev.gs_usb, "manufacturer", "") or ""
-        except Exception as exc:
-            log.warning("Could not read USB descriptors: %s", exc)
-
-        dev_desc = f"{prod} {mfg}".lower()
-        log.info("Checking DynoSure interlock: Product='%s', Manufacturer='%s'", prod, mfg)
-
-        if "dynosure" not in dev_desc:
-            raise ValueError(
-                f"Interlock failed: Device at index {index} ('{prod}') is not a DynoSure device."
-            )
-        return can.Bus(interface="gs_usb", channel=index, bitrate=bitrate)
+        return DynoSureSlcanBus(channel=channel, bitrate=bitrate, index=index)
 
     elif interface == "gs_usb":
         _ensure_libusb()
