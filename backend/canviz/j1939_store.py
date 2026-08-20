@@ -25,10 +25,9 @@ import json
 import logging
 import os
 import pathlib
-import time
 import threading
+import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 log = logging.getLogger("canviz.j1939")
 
@@ -128,7 +127,7 @@ _HAS_PRETTY_J1939 = False
 
 # ── pretty_j1939 loader ───────────────────────────────────────────────────────
 
-def _find_db_path() -> Optional[pathlib.Path]:
+def _find_db_path() -> pathlib.Path | None:
     """Find J1939db.json - user config dir first, then package bundled."""
     if os.name == "nt":
         base = os.environ.get("APPDATA", "")
@@ -320,7 +319,7 @@ class J1939Store:
             self._recent_bam.clear()
             self._recent_dm1.clear()
 
-    def process_frame(self, arb_id: int, data: bytes, is_extended: bool) -> Optional[dict]:
+    def process_frame(self, arb_id: int, data: bytes, is_extended: bool) -> dict | None:
         if is_extended:
             with self._lock:
                 self._extended_count += 1
@@ -368,8 +367,8 @@ class J1939Store:
 
             is_bam_cm    = False
             is_bam_dt    = False
-            bam_complete: Optional[dict] = None
-            dm1_faults:   Optional[list] = None
+            bam_complete: dict | None = None
+            dm1_faults:   list | None = None
 
             if pgn == 0xEC00 and len(data) >= 8 and data[0] == 0x20:
                 is_bam_cm   = True

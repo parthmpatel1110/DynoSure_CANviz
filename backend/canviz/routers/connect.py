@@ -12,9 +12,9 @@ from fastapi import APIRouter, HTTPException
 
 from canviz.bus import bus_manager
 from canviz.config import settings
-from canviz.models import ConnectRequest, ConnectionStatus
-from canviz.ws_broadcaster import broadcaster
+from canviz.models import ConnectionStatus, ConnectRequest
 from canviz.stats_store import stats
+from canviz.ws_broadcaster import broadcaster
 
 router = APIRouter(tags=["connection"])
 

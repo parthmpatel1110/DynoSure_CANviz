@@ -14,9 +14,10 @@ Assumptions:
 """
 
 from pathlib import Path
+
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # ---------------------------------------------------------------------------
 # Import the replay router (new in Phase 2)
@@ -56,7 +57,7 @@ def mount_frontend(app: FastAPI) -> None:
 
     # SPA fallback — all unknown GET paths return index.html
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def spa_fallback(full_path: str):  # noqa: ARG001
+    async def spa_fallback(full_path: str):
         index = STATIC_DIR / "index.html"
         if index.exists():
             return FileResponse(index)

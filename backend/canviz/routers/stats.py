@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+
 from canviz.stats_store import stats
 
 router = APIRouter()

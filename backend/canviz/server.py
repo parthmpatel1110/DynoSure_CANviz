@@ -5,24 +5,24 @@ Assembles the FastAPI app - mounts all routers, configures CORS
 (browser -> localhost needs it), and wires startup/shutdown via lifespan.
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from canviz.routers import connect, frames, dbc, log
-from canviz.bus import bus_manager
-from canviz.ws_broadcaster import broadcaster
-from canviz.routers.replay import router as replay_router, set_broadcast_fn
-from canviz.static_serving import mount_frontend
-from canviz.routers import stats as stats_router
-from canviz.routers.j1939 import router as j1939_router
-from canviz.routers.canopen import router as canopen_router
-
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-import logging
+
+from canviz.bus import bus_manager
+from canviz.routers import connect, dbc, frames, log
+from canviz.routers import stats as stats_router
+from canviz.routers.canopen import router as canopen_router
+from canviz.routers.j1939 import router as j1939_router
+from canviz.routers.replay import router as replay_router
+from canviz.routers.replay import set_broadcast_fn
+from canviz.static_serving import mount_frontend
+from canviz.ws_broadcaster import broadcaster
 
 # ── Suppress high-frequency poll noise from uvicorn access log ────────────────
 # /status is polled every 5s by useStatusSync; /canopen/status every 2s.

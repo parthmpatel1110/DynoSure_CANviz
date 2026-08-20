@@ -17,14 +17,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Optional
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState
 
+from canviz.canopen_store import canopen_store
 from canviz.dbc_store import dbc_store
 from canviz.j1939_store import j1939_store
-from canviz.canopen_store import canopen_store
 from canviz.stats_store import stats
 
 log = logging.getLogger("canviz.ws")
@@ -36,8 +35,8 @@ _THROTTLE_QUEUE_DEPTH = 0
 class WSBroadcaster:
     def __init__(self) -> None:
         self._clients: list[WebSocket] = []
-        self._queue: Optional[asyncio.Queue] = None
-        self._broadcaster_task: Optional[asyncio.Task] = None
+        self._queue: asyncio.Queue | None = None
+        self._broadcaster_task: asyncio.Task | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
 

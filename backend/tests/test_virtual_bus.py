@@ -8,14 +8,15 @@ Run: pytest tests/ -v
 """
 
 import asyncio
+
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from canviz.server import app
 from canviz.bus import bus_manager
-from canviz.ws_broadcaster import broadcaster
 from canviz.dbc_store import dbc_store
+from canviz.server import app
+from canviz.ws_broadcaster import broadcaster
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

@@ -38,10 +38,9 @@ EDS decode (optional):
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 log = logging.getLogger("canviz.canopen")
 
@@ -228,7 +227,7 @@ _BUILTIN_OBJECTS: dict[tuple[int, int], dict] = {
 }
 
 
-def _builtin_lookup(index: int, subindex: int) -> Optional[dict]:
+def _builtin_lookup(index: int, subindex: int) -> dict | None:
     """
     Look up an object in the built-in CiA 301/402 dictionary.
     Also handles parameterized index ranges (PDO params, SDO params etc).
@@ -433,12 +432,12 @@ def _sdo_description(cmd: int, is_request: bool) -> str:
 @dataclass
 class CobInfo:
     frame_type: str   # "NMT" | "SYNC" | "TIME" | "EMCY" | "TPDO1"... | "SDO-req" | "SDO-resp" | "Heartbeat"
-    node_id: Optional[int]   # None for broadcast frames (NMT, SYNC, TIME)
-    pdo_index: Optional[int]   # 1-4 for PDO types
-    is_tx: Optional[bool]   # True=TPDO, False=RPDO, None for non-PDO
+    node_id: int | None   # None for broadcast frames (NMT, SYNC, TIME)
+    pdo_index: int | None   # 1-4 for PDO types
+    is_tx: bool | None   # True=TPDO, False=RPDO, None for non-PDO
 
 
-def classify_cob_id(cob_id: int) -> Optional[CobInfo]:
+def classify_cob_id(cob_id: int) -> CobInfo | None:
     """
     Classify a CAN arbitration ID as a CANopen frame type.
     Returns None if the ID is outside the CANopen range (0x000-0x77F).
@@ -489,18 +488,18 @@ class NodeRecord:
     node_id: int
     nmt_state: str = "Unknown"
     last_heartbeat: float = field(default_factory=time.monotonic)
-    heartbeat_interval_ms: Optional[float] = None   # estimated from recent HBs
+    heartbeat_interval_ms: float | None = None   # estimated from recent HBs
     _prev_heartbeat: float = field(default_factory=time.monotonic, repr=False)
     frame_count: int = 0
     first_seen: float = field(default_factory=time.monotonic)
     # CiA 402 drive state (populated from PDOs when EDS is loaded)
-    cia402_statusword: Optional[int] = None
-    cia402_state: Optional[str] = None
-    cia402_mode: Optional[str] = None
-    cia402_target_value: Optional[float] = None
-    cia402_actual_value: Optional[float] = None
+    cia402_statusword: int | None = None
+    cia402_state: str | None = None
+    cia402_mode: str | None = None
+    cia402_target_value: float | None = None
+    cia402_actual_value: float | None = None
     emcy_active: bool = False
-    last_emcy_code: Optional[int] = None
+    last_emcy_code: int | None = None
 
 
 # ── SDO pending record ────────────────────────────────────────────────────────
@@ -523,7 +522,7 @@ class SdoTransaction:
     request_cmd: str
     response_cmd: str
     data_hex: str
-    value_int: Optional[int]   # int interpretation of data (little-endian)
+    value_int: int | None   # int interpretation of data (little-endian)
     timestamp: float = field(default_factory=time.monotonic)
     is_abort: bool = False
 
@@ -578,8 +577,8 @@ class EdsStore:
     """
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._network: Optional["canopen.Network"] = None
-        self._filename: Optional[str] = None
+        self._network: canopen.Network | None = None
+        self._filename: str | None = None
         self._node_ids: list[int] = []
 
     def load(self, eds_bytes: bytes, filename: str) -> dict:
@@ -590,9 +589,10 @@ class EdsStore:
         if not _canopen_available:
             return {"ok": False, "message": "canopen library not installed -- pip install canopen"}
 
-        import canopen
-        import tempfile
         import os
+        import tempfile
+
+        import canopen
 
         try:
             # canopen library needs a real file path - write bytes to a temp file
@@ -634,10 +634,10 @@ class EdsStore:
         return self._network is not None
 
     @property
-    def filename(self) -> Optional[str]:
+    def filename(self) -> str | None:
         return self._filename
 
-    def decode_pdo(self, node_id: int, pdo_index: int, is_tx: bool, data: bytes) -> Optional[dict]:
+    def decode_pdo(self, node_id: int, pdo_index: int, is_tx: bool, data: bytes) -> dict | None:
         """
         Decode a PDO payload directly from EDS mapping objects. Fully offline.
 
@@ -754,7 +754,7 @@ class EdsStore:
                 log.debug("PDO decode error node=%d pdo%d: %s", node_id, pdo_index, exc)
                 return None
 
-    def lookup_object(self, index: int, subindex: int) -> Optional[dict]:
+    def lookup_object(self, index: int, subindex: int) -> dict | None:
         """Look up an object by index/subindex. Returns {name, access, data_type, default}."""
         with self._lock:
             if self._network is None:
@@ -812,7 +812,7 @@ class CANopenStore:
         self._recent_emcy: list[dict] = []   # last 20 EMCY events
         self._nmt_log: list[dict]     = []   # last 20 NMT commands seen
         self._sync_count: int         = 0
-        self._last_sync: Optional[float] = None
+        self._last_sync: float | None = None
 
     # ── Public control ────────────────────────────────────────────────────────
 
@@ -846,7 +846,7 @@ class CANopenStore:
 
     def process_frame(
         self, arb_id: int, data: bytes, is_extended: bool
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Main entry point -- called for every frame from ws_broadcaster.on_frame().
         Returns a dict to attach as frame["canopen"] if the frame is CANopen,
@@ -936,7 +936,7 @@ class CANopenStore:
             self._last_sync   = now
         return {"detail": "SYNC", "sync_count": self._sync_count}
 
-    def _handle_emcy(self, node_id: Optional[int], data: bytes, now: float) -> dict:
+    def _handle_emcy(self, node_id: int | None, data: bytes, now: float) -> dict:
         if len(data) < 5 or node_id is None:
             return {"detail": "EMCY (malformed)"}
 
@@ -1033,7 +1033,7 @@ class CANopenStore:
 
         return result
 
-    def _handle_sdo_request(self, node_id: Optional[int], data: bytes, now: float) -> dict:
+    def _handle_sdo_request(self, node_id: int | None, data: bytes, now: float) -> dict:
         if len(data) < 4 or node_id is None:
             return {"detail": "SDO-req (malformed)"}
 
@@ -1055,7 +1055,7 @@ class CANopenStore:
             "sdo_desc":  desc,
         }
 
-    def _handle_sdo_response(self, node_id: Optional[int], data: bytes, now: float) -> dict:
+    def _handle_sdo_response(self, node_id: int | None, data: bytes, now: float) -> dict:
         if len(data) < 4 or node_id is None:
             return {"detail": "SDO-resp (malformed)"}
 
@@ -1072,12 +1072,12 @@ class CANopenStore:
             payload = payload[:4 - n]
 
         data_hex  = payload.hex(" ").upper() if payload else ""
-        value_int: Optional[int] = None
+        value_int: int | None = None
         if payload:
             value_int = int.from_bytes(payload, "little")
 
         # Pair with pending request
-        transaction: Optional[dict] = None
+        transaction: dict | None = None
         with self._lock:
             pending = self._sdo_pending.pop(node_id, None)
             # Only pair if within timeout window and same index/subindex
@@ -1126,7 +1126,7 @@ class CANopenStore:
 
         return result
 
-    def _handle_heartbeat(self, node_id: Optional[int], data: bytes, now: float) -> dict:
+    def _handle_heartbeat(self, node_id: int | None, data: bytes, now: float) -> dict:
         if node_id is None:
             return {"detail": "Heartbeat (unknown node)"}
 
@@ -1139,7 +1139,7 @@ class CANopenStore:
                 rec = NodeRecord(node_id=node_id, nmt_state=state_name)
                 self._nodes[node_id] = rec
             else:
-                interval_ms: Optional[float] = None
+                interval_ms: float | None = None
                 if rec.last_heartbeat:
                     interval_ms = (now - rec.last_heartbeat) * 1000
                 rec._prev_heartbeat        = rec.last_heartbeat

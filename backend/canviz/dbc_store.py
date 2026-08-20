@@ -11,7 +11,6 @@ structured error — never a crash.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import cantools
 import cantools.database
@@ -21,7 +20,7 @@ log = logging.getLogger("canviz.dbc")
 
 class DBCStore:
     def __init__(self) -> None:
-        self._db: Optional[cantools.database.Database] = None
+        self._db: cantools.database.Database | None = None
         self._path: str = ""
 
     @property

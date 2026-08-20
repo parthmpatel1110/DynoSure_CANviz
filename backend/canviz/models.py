@@ -6,7 +6,7 @@ Keeping them in one place avoids circular imports.
 """
 
 from __future__ import annotations
-from typing import Optional, Union
+
 from pydantic import BaseModel
 
 
@@ -28,7 +28,7 @@ class ConnectionStatus(BaseModel):
     channel: str
     bitrate: int
     index: int
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ConnectRequest(BaseModel):
@@ -36,7 +36,7 @@ class ConnectRequest(BaseModel):
     # channel is a string for slcan/socketcan (e.g. "COM3", "can0")
     # and an int for gs_usb (device index).
     # Accept both; bus.py passes it as `index` for gs_usb.
-    channel: Union[str, int] = ""
+    channel: str | int = ""
     bitrate: int = 500_000
     baudrate: int = 115_200
     index: int = 0

@@ -11,8 +11,8 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from canviz.bus import bus_manager
 from canviz.models import SendFrameRequest
-from canviz.ws_broadcaster import broadcaster
 from canviz.stats_store import stats
+from canviz.ws_broadcaster import broadcaster
 
 router = APIRouter(tags=["frames"])
 

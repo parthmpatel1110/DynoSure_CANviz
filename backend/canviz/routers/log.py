@@ -17,7 +17,6 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 import aiofiles
 from fastapi import APIRouter, HTTPException
@@ -31,7 +30,7 @@ router = APIRouter(prefix="/log", tags=["logging"])
 # Where logs are written — will be created if it doesn't exist
 LOG_DIR = Path("logs")
 
-_session: Optional["LogSession"] = None
+_session: LogSession | None = None
 
 
 class LogSession:
@@ -41,7 +40,7 @@ class LogSession:
         self.asc_path = LOG_DIR / f"{base}.asc"
         self.csv_path = LOG_DIR / f"{base}.csv"
         self._queue: asyncio.Queue = asyncio.Queue()
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._start_time = time.monotonic()
         self._count = 0
 

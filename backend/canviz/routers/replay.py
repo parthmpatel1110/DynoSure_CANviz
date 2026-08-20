@@ -25,9 +25,8 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -55,7 +54,7 @@ class ReplayStatus(BaseModel):
     paused: bool
     speed: float
     progress: float     # 0.0 – 100.0
-    filename: Optional[str] = None
+    filename: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -68,8 +67,8 @@ class _ReplaySession:
         self.paused   = False
         self.speed    = 1.0
         self.progress = 0.0
-        self.filename: Optional[str] = None
-        self._task: Optional[asyncio.Task] = None  # type: ignore[type-arg]
+        self.filename: str | None = None
+        self._task: asyncio.Task | None = None  # type: ignore[type-arg]
         self._pause_event = asyncio.Event()
         self._pause_event.set()   # not paused initially
         self._stop_flag = False

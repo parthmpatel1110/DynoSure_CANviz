@@ -29,25 +29,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import can
 from can import Message
 
-from canviz.config import settings, InterfaceType
+from canviz.config import InterfaceType, settings
 
 log = logging.getLogger("canviz.bus")
 
 
 class BusManager:
     def __init__(self) -> None:
-        self._bus: Optional[can.BusABC] = None
-        self._reader_task: Optional[asyncio.Task] = None
+        self._bus: can.BusABC | None = None
+        self._reader_task: asyncio.Task | None = None
         self._connected: bool = False
-        self._error: Optional[str] = None
+        self._error: str | None = None
         self._frame_callbacks: list[Callable[[Message], None]] = []
         self._open_time: float = 0.0
-        self._open_interface: Optional[str] = None
+        self._open_interface: str | None = None
         self._open_channel: str = ""
         self._open_bitrate: int = 0
         self._open_index: int = 0
@@ -59,7 +59,7 @@ class BusManager:
         return self._connected
 
     @property
-    def error(self) -> Optional[str]:
+    def error(self) -> str | None:
         return self._error
 
     def add_frame_callback(self, cb: Callable[[Message], None]) -> None:
@@ -179,7 +179,7 @@ class BusManager:
 
         while self._connected and self._bus is not None:
             try:
-                msg: Optional[Message] = await loop.run_in_executor(
+                msg: Message | None = await loop.run_in_executor(
                     None, self._bus.recv, 0.1
                 )
             except Exception as exc:
@@ -254,8 +254,8 @@ def _ensure_libusb() -> None:
         return
 
     try:
-        import usb.core
         import usb.backend.libusb1 as libusb1_backend  # noqa: F401
+        import usb.core
 
         backend = _find_libusb_backend()
         if backend is None:
@@ -282,19 +282,14 @@ def _ensure_libusb() -> None:
 
 
 def _release_bus_resources(bus: can.BusABC) -> None:
-    # 1. Handle gs_usb specially to avoid python-can't GsUsb.scan() re-open bug on Windows
-    if hasattr(bus, "gs_usb"):
-        try:
-            # Set _index to None to bypass buggy scan block in python-can't shutdown()
-            if hasattr(bus, "_index"):
-                bus._index = None
-        except Exception:
-            pass
+    if hasattr(bus, "gs_usb") and hasattr(bus, "_index"):
+        # Set _index to None to bypass buggy scan block in python-can't shutdown()
+        bus._index = None
 
     # 2. Shutdown standard bus (this now runs fully/properly since _is_shutdown is False)
     try:
         bus.shutdown()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.debug("bus.shutdown() warning: %s", exc)
 
     # 3. Explicitly release pyusb / libusb C handle for the device
@@ -304,14 +299,14 @@ def _release_bus_resources(bus: can.BusABC) -> None:
                 import usb.util
                 usb.util.dispose_resources(bus.gs_usb.gs_usb)
                 log.debug("Disposed pyusb resources for gs_usb")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             log.debug("dispose_resources error: %s", exc)
 
     # 3. Clean up any remaining scanned pyusb devices for gs_usb
     try:
+        import can.interfaces.gs_usb
         import usb.core
         import usb.util
-        import can.interfaces.gs_usb
         devs = usb.core.find(
             find_all=True,
             custom_match=can.interfaces.gs_usb.GsUsb.is_gs_usb_device,
@@ -327,7 +322,7 @@ def _release_bus_resources(bus: can.BusABC) -> None:
 
 
 import queue
-from typing import Tuple
+
 
 class DynoSureSlcanBus(can.BusABC):
     def __init__(self, channel: str = "", bitrate: int = 500000, index: int = 0, **kwargs):
@@ -385,7 +380,8 @@ class DynoSureSlcanBus(can.BusABC):
             raise ValueError(f"Failed to set bitrate {bitrate} (brp={brp})")
             
         def _rx_wrapper(packet_ptr):
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 pkt = packet_ptr.contents
                 data_len = pkt.dlc
                 msg = can.Message(
@@ -399,8 +395,6 @@ class DynoSureSlcanBus(can.BusABC):
                     channel=self.channel_info
                 )
                 self._queue.put(msg)
-            except Exception:
-                pass
                 
         self._slcan.set_rx_callback(_rx_wrapper, port_name=self._port)
         
@@ -412,14 +406,14 @@ class DynoSureSlcanBus(can.BusABC):
             
         self.channel_info = selected_dev.displayName.decode("utf-8", errors="ignore")
         
-    def _recv_internal(self, timeout: Optional[float]) -> Tuple[Optional[can.Message], bool]:
+    def _recv_internal(self, timeout: float | None) -> tuple[can.Message | None, bool]:
         try:
             msg = self._queue.get(timeout=timeout)
             return msg, False
         except queue.Empty:
             return None, False
             
-    def send(self, msg: can.Message, timeout: Optional[float] = None) -> None:
+    def send(self, msg: can.Message, timeout: float | None = None) -> None:
         if not self._port:
             raise RuntimeError("Port not opened")
             
@@ -444,10 +438,9 @@ class DynoSureSlcanBus(can.BusABC):
         if self._port:
             port = self._port
             self._port = None
-            try:
+            import contextlib
+            with contextlib.suppress(Exception):
                 self._slcan.close(port)
-            except Exception:
-                pass
 
 
 def _open_bus(
@@ -525,12 +518,12 @@ def _open_bus(
 
 
 def open_bus(
-    interface: "InterfaceType",
+    interface: InterfaceType,
     channel: str = "",
     bitrate: int = 500_000,
     index: int = 0,
     serial_baudrate: int = 115200,  
-) -> "can.BusABC":
+) -> can.BusABC:
     """
     Public wrapper around _open_bus().
     Used by CLI subcommands (monitor, capture) that bypass FastAPI entirely.

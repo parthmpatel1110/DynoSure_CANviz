@@ -33,7 +33,7 @@ import time
 import webbrowser
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Annotated
 
 import can
 import typer
@@ -42,11 +42,9 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 from rich.text import Text
-from typing_extensions import Annotated
 
-from canviz.bus import open_bus  
+from canviz.bus import open_bus
 from canviz.config import settings
-
 
 # ── Typer app ────────────────────────────────────────────────────────────────
 
@@ -87,7 +85,7 @@ IndexOpt = Annotated[
     typer.Option("--index", help="gs_usb device index when multiple devices are attached"),
 ]
 DbcOpt = Annotated[
-    Optional[Path],
+    Path | None,
     typer.Option("--dbc", help="Path to a .dbc file for signal decoding"),
 ]
 
@@ -198,7 +196,7 @@ def _run_serve(
 
     if headless:
         console.print("  [yellow]Headless mode[/] - API + WebSocket only, browser will not open.")
-        console.print("  Connect to the WebSocket at [cyan]ws://{}:{}/ws/frames[/]\n".format(host, port))
+        console.print(f"  Connect to the WebSocket at [cyan]ws://{host}:{port}/ws/frames[/]\n")
 
     def _auto_connect(do_connect: bool = True) -> None:
         import urllib.request
@@ -761,11 +759,11 @@ def capture(
     index: IndexOpt = 0,
     bitrate: BitrateOpt = 500_000, 
     output: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--output", "-o", help="Output file path (default: canviz_YYYYMMDD_HHMMSS.json)"),
     ] = None,
     duration: Annotated[
-        Optional[float],
+        float | None,
         typer.Option("--duration", "-d", help="Capture duration in seconds (default: run until Ctrl+C)"),
     ] = None,
 ) -> None:
@@ -895,7 +893,7 @@ def decode(
         typer.Option("--format", "-f", help="Output format: json | csv"),
     ] = "json",
     output: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--output", "-o", help="Output file path. If omitted, writes to stdout (for shell pipelines)."),
     ] = None,
 ) -> None:
@@ -1033,8 +1031,8 @@ def j1939_status(
       canviz serve --interface slcan --channel COM3 --bitrate 250000 &
       canviz j1939 status
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     url = f"http://{host}:{port}/j1939/status"
     try:

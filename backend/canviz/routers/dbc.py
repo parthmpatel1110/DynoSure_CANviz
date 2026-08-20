@@ -8,7 +8,7 @@ GET    /dbc/messages  — list all decoded message definitions
 DELETE /dbc           — unload the current DBC
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from canviz.dbc_store import dbc_store
