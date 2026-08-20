@@ -46,7 +46,7 @@ async def connect(req: ConnectRequest):
             index=index,
             baudrate=baudrate
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
 
     bus_manager.add_frame_callback(broadcaster.on_frame)

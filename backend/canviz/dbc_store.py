@@ -77,7 +77,7 @@ class DBCStore:
             return result
         except KeyError:
             return []  # ID not in DBC — normal for mixed bus traffic
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             log.debug("Decode error id=0x%X: %s", arbitration_id, exc)
             return []
 

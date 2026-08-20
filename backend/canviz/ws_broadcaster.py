@@ -82,7 +82,7 @@ class WSBroadcaster:
             try:
                 self._queue.get_nowait()
                 drained += 1
-            except Exception:
+            except Exception:  # noqa: BLE001
                 break
         if drained:
             log.debug("Drained %d stale frames from broadcaster queue.", drained)
@@ -164,7 +164,7 @@ class WSBroadcaster:
                 try:
                     if ws.client_state == WebSocketState.CONNECTED:
                         await ws.send_text(payload)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     dead.append(ws)
 
             for ws in dead:
@@ -188,7 +188,7 @@ class WSBroadcaster:
                 try:
                     if ws.client_state == WebSocketState.CONNECTED:
                         await ws.send_text(payload)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     dead.append(ws)
             for ws in dead:
                 await self.unregister(ws)

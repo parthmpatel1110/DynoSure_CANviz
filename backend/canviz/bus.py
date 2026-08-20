@@ -133,7 +133,7 @@ class BusManager:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, _release_bus_resources, bus)
                 log.info("Bus hardware released.")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 log.warning("Bus release error: %s", exc)
 
             self._bus = None
@@ -169,7 +169,7 @@ class BusManager:
             for cb in list(self._frame_callbacks):
                 try:
                     cb(msg)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     log.warning("Frame callback error on tx echo: %s", exc)
 
     async def _reader_loop(self) -> None:
@@ -182,7 +182,7 @@ class BusManager:
                 msg: Message | None = await loop.run_in_executor(
                     None, self._bus.recv, 0.1
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 log.warning("recv error: %s", exc)
                 await asyncio.sleep(0.1)
                 continue
@@ -209,7 +209,7 @@ class BusManager:
             for cb in list(self._frame_callbacks):
                 try:
                     cb(msg)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     log.warning("Frame callback error: %s", exc)
 
         log.debug("Reader loop exited.")
@@ -232,7 +232,7 @@ def _find_libusb_backend():
         backend = libusb1_backend.get_backend(find_library=lambda x: dll_path)
         if backend:
             return backend
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.debug("Bundled libusb not usable (%s), falling back to system search", exc)
 
     backend = libusb1_backend.get_backend()
@@ -303,7 +303,8 @@ def _release_bus_resources(bus: can.BusABC) -> None:
             log.debug("dispose_resources error: %s", exc)
 
     # 3. Clean up any remaining scanned pyusb devices for gs_usb
-    try:
+    import contextlib
+    with contextlib.suppress(Exception):
         import can.interfaces.gs_usb
         import usb.core
         import usb.util
@@ -313,12 +314,8 @@ def _release_bus_resources(bus: can.BusABC) -> None:
         )
         if devs:
             for dev in devs:
-                try:
+                with contextlib.suppress(Exception):
                     usb.util.dispose_resources(dev)
-                except Exception:
-                    pass
-    except Exception:
-        pass
 
 
 import queue

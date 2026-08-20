@@ -8,6 +8,12 @@ Assembles the FastAPI app - mounts all routers, configures CORS
 import logging
 from contextlib import asynccontextmanager
 
+# ── Suppress high-frequency poll noise from uvicorn access log ────────────────
+# /status is polled every 5s by useStatusSync; /canopen/status every 2s.
+# These are always-200 background heartbeats - hiding them makes real requests
+# visible. All other paths (connect, send, errors, WebSocket) stay visible.
+from typing import ClassVar
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -24,13 +30,9 @@ from canviz.routers.replay import set_broadcast_fn
 from canviz.static_serving import mount_frontend
 from canviz.ws_broadcaster import broadcaster
 
-# ── Suppress high-frequency poll noise from uvicorn access log ────────────────
-# /status is polled every 5s by useStatusSync; /canopen/status every 2s.
-# These are always-200 background heartbeats - hiding them makes real requests
-# visible. All other paths (connect, send, errors, WebSocket) stay visible.
 
 class _SuppressPollLog(logging.Filter):
-    _MUTED = {"/status", "/canopen/status"}
+    _MUTED: ClassVar[set[str]] = {"/status", "/canopen/status"}
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
@@ -89,10 +91,9 @@ app.include_router(replay_router)
 async def _replay_broadcast(frame_dict: dict) -> None:
     """Puts a replay frame dict directly onto the broadcaster queue."""
     if broadcaster._queue is not None:
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             broadcaster._queue.put_nowait(frame_dict)
-        except Exception:
-            pass
 
 
 set_broadcast_fn(_replay_broadcast)

@@ -619,7 +619,7 @@ class EdsStore:
                 "node_count": len(network.nodes),
                 "node_ids":   list(network.nodes.keys()),
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             log.warning("EDS load failed: %s", exc)
             return {"ok": False, "message": f"EDS parse error: {exc}"}
 
@@ -678,7 +678,7 @@ class EdsStore:
                 # Sub 0 = number of mapped objects
                 try:
                     num_entries = int(map_obj[0].default)
-                except Exception:
+                except Exception:  # noqa: BLE001
                     return None
                 if num_entries == 0:
                     return None
@@ -697,7 +697,7 @@ class EdsStore:
                     try:
                         entry   = map_obj[sub]
                         map_val = int(entry.default)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S112
                         continue
 
                     if map_val == 0:
@@ -735,7 +735,7 @@ class EdsStore:
                                 sub_obj   = obj[obj_subindex]
                                 name      = sub_obj.parameter_name
                                 is_signed = (sub_obj.data_type in _SIGNED_TYPES)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
 
                     # Sign-extend if the data type is signed
@@ -750,7 +750,7 @@ class EdsStore:
 
                 return {"signals": signals} if signals else None
 
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 log.debug("PDO decode error node=%d pdo%d: %s", node_id, pdo_index, exc)
                 return None
 
@@ -779,7 +779,7 @@ class EdsStore:
                     "access":    getattr(obj, "access_type", "unknown"),
                     "data_type": str(getattr(obj, "data_type", "unknown")),
                 }
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return None
 
     def _get_first_od(self):

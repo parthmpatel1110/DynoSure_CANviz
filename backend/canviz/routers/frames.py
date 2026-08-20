@@ -39,6 +39,6 @@ async def send_frame(req: SendFrameRequest):
     try:
         await bus_manager.send(req.id, req.data, req.is_extended_id)
         stats.on_tx(len(req.data))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
     return {"ok": True, "id": hex(req.id), "data": req.data}

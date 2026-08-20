@@ -17,7 +17,7 @@ router = APIRouter(prefix="/dbc", tags=["dbc"])
 
 
 @router.post("/load")
-async def load_dbc(file: UploadFile = File(...)):
+async def load_dbc(file: UploadFile = File(...)):  # noqa: B008
     content = await file.read()
     if not file.filename or not file.filename.lower().endswith(".dbc"):
         raise HTTPException(status_code=400, detail="File must have a .dbc extension.")
@@ -52,7 +52,7 @@ async def encode_dbc_message(req: EncodeRequest):
         return {"data": list(encoded), "dlc": len(encoded)}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Message ID {req.message_id} not found in DBC.")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc))
 
 

@@ -71,7 +71,7 @@ async def reset():
 # ── EDS endpoints ─────────────────────────────────────────────────────────────
 
 @router.post("/eds")
-async def upload_eds(file: UploadFile = File(...)):
+async def upload_eds(file: UploadFile = File(...)):  # noqa: B008
     """
     Upload an EDS file. Replaces any previously loaded EDS.
     Accepts .eds files (DCF files work too -- same format).
@@ -128,7 +128,7 @@ async def sdo_read(req: SdoReadRequest):
             data=data,
             is_extended_id=False,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Send error: {exc}")
 
     return {
@@ -184,7 +184,7 @@ async def send_nmt(req: NmtRequest):
             data=[req.command, req.node_id & 0xFF],
             is_extended_id=False,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"NMT send error: {exc}")
 
     cmd_name = _NMT_COMMAND_NAMES.get(req.command, f"0x{req.command:02X}")
@@ -251,7 +251,7 @@ async def sdo_write(req: SdoWriteRequest):
             data=frame_data,
             is_extended_id=False,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Send error: {exc}")
 
     log.info(
@@ -385,7 +385,7 @@ async def export_node_config(req: ExportRequest):
                 })
                 # 8ms gap between requests to avoid flooding slow nodes
                 await asyncio.sleep(0.008)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 log.warning("Export SDO read failed node=0x%02X 0x%04X: %s", node_id, index, exc)
 
     return {

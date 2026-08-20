@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -207,7 +207,7 @@ def _run_serve(
             try:
                 urllib.request.urlopen(f"{base}/status", timeout=1)
                 break
-            except Exception:
+            except Exception:  # noqa: BLE001
                 time.sleep(0.25)
         if not do_connect:
             # No explicit args given - just open browser, skip /connect
@@ -233,7 +233,7 @@ def _run_serve(
                 if resp.status == 200:
                     console.print(f"  [green]Auto-connected:[/] {interface}"
                                   + (f" on {channel}" if channel else ""))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             err_console.print(f"  [yellow]Auto-connect failed:[/] {exc}")
             return
         # Optionally enable J1939
@@ -249,7 +249,7 @@ def _run_serve(
                 with urllib.request.urlopen(j_req, timeout=5) as resp:
                     if resp.status == 200:
                         console.print("  [green]J1939 decoder enabled.[/]")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 err_console.print(f"  [yellow]J1939 enable failed:[/] {exc}")
         # Open browser unless headless
         if not headless:
@@ -311,7 +311,7 @@ def monitor(
             db = cantools.database.load_file(str(dbc))
             if is_tty:
                 console.print(f"  [green]DBC loaded:[/] {dbc.name} ({len(db.messages)} messages)\n")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             console.print(f"  [yellow]Warning:[/] DBC load failed - {exc}", err=True)
 
     # Import J1939 store if needed
@@ -323,14 +323,14 @@ def monitor(
             j1939_store_inst.set_mode("on")
             if is_tty:
                 console.print("  [cyan]J1939 decode enabled[/] - PGN and SA columns active\n")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             console.print(f"  [yellow]Warning:[/] J1939 init failed - {exc}", err=True)
             j1939_store_inst = None
 
     # Open the bus directly - no FastAPI involved
     try:
         bus = open_bus(interface, channel, bitrate, index)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] Could not open bus - {exc}", err=True)
         raise typer.Exit(code=1)
 
@@ -379,7 +379,7 @@ def monitor(
                             or sa_db.get(str(sa_int))
                             or ""
                         )
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
 
         with lock:
@@ -445,7 +445,7 @@ def monitor(
                             f"Check CAN bitrate ({bitrate} bps) matches the bus. "
                             f"Try --serial-baudrate 2000000 if needed."
                         )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 err_console.print(f"  [red]recv error:[/] {exc}")
                 time.sleep(0.1)
 
@@ -537,7 +537,7 @@ def monitor(
         reader_thread.join(timeout=1.0)
         try:
             bus.shutdown()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         if is_tty:
             with lock:
@@ -570,13 +570,13 @@ def monitor(
             db = cantools.database.load_file(str(dbc))
             if is_tty:
                 console.print(f"  [green]DBC loaded:[/] {dbc.name} ({len(db.messages)} messages)\n")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             console.print(f"  [yellow]Warning:[/] DBC load failed - {exc}", err=True)
 
     # Open the bus directly - no FastAPI involved
     try:
         bus = open_bus(interface, channel, bitrate, index)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] Could not open bus - {exc}", err=True)
         raise typer.Exit(code=1)
 
@@ -663,7 +663,7 @@ def monitor(
                             f"Check CAN bitrate ({bitrate} bps) matches the bus. "
                             f"Try --serial-baudrate 2000000 if needed."
                         )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 err_console.print(f"  [red]recv error:[/] {exc}")
                 time.sleep(0.1)
 
@@ -740,7 +740,7 @@ def monitor(
         reader_thread.join(timeout=1.0)
         try:
             bus.shutdown()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         if is_tty:
             with lock:
@@ -779,12 +779,12 @@ def capture(
       canviz capture --interface slcan --channel COM3 --serial-baudrate 2000000
     """
     if output is None:
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         output = Path(f"canviz_{ts}.json")
 
     try:
         bus = open_bus(interface, channel, bitrate, index,)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] Could not open bus - {exc}", err=True)
         raise typer.Exit(code=1)
 
@@ -823,7 +823,7 @@ def capture(
                     "is_error_frame": msg.is_error_frame,
                     "is_fd":    getattr(msg, "is_fd", False),
                 })
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 err_console.print(f"  [red]recv error:[/] {exc}")
                 time.sleep(0.1)
 
@@ -860,7 +860,7 @@ def capture(
         reader_thread.join(timeout=1.0)
         try:
             bus.shutdown()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     # Write output
@@ -869,7 +869,7 @@ def capture(
             "interface": interface,
             "channel":   channel,
             "bitrate":   bitrate,
-            "captured_at": datetime.now().isoformat(),
+            "captured_at": datetime.now(timezone.utc).isoformat(),
             "duration_s":  round(time.monotonic() - start, 3),
             "frame_count": len(frames),
         },
@@ -927,13 +927,13 @@ def decode(
 
     try:
         db = cantools.database.load_file(str(dbc))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] DBC parse failed - {exc}", err=True)
         raise typer.Exit(code=1)
 
     try:
         raw = json.loads(input.read_text())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] Could not read capture file - {exc}", err=True)
         raise typer.Exit(code=1)
 
@@ -954,7 +954,7 @@ def decode(
                 for k, v in signals.items()
             }
             msg_name = msg_def.name
-        except Exception:
+        except Exception:  # noqa: BLE001
             msg_name = ""
 
         decoded_frames.append({
@@ -974,7 +974,7 @@ def decode(
 
     # Determine output destination
     use_file = output is not None
-    out_stream = open(output, "w", newline="", encoding="utf-8") if use_file else sys.stdout
+    out_stream = open(output, "w", newline="", encoding="utf-8") if use_file else sys.stdout  # noqa: SIM115
 
     try:
         if format == "json":

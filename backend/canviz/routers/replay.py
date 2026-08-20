@@ -222,10 +222,9 @@ async def _replay_worker(filepath: Path, speed: float, broadcast_fn) -> None:
             "is_fd":          False,
             "decoded_signals": [],
         }
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             await broadcast_fn(frame_dict)
-        except Exception:
-            pass  # Client may have disconnected
 
         _session.progress = (i + 1) / total * 100.0
 
@@ -238,7 +237,7 @@ async def _replay_worker(filepath: Path, speed: float, broadcast_fn) -> None:
 # ---------------------------------------------------------------------------
 
 @router.post("/upload")
-async def upload_replay_file(file: UploadFile = File(...)):
+async def upload_replay_file(file: UploadFile = File(...)):  # noqa: B008
     """Accept a .asc or .csv file and store it server-side for replay."""
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in {".asc", ".csv"}:

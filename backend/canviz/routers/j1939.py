@@ -71,5 +71,5 @@ async def debug_pgn_db():
         return {"top_keys": top_keys, "samples": samples}
     except ImportError:
         return {"error": "pretty_j1939 not installed"}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"error": str(exc)}

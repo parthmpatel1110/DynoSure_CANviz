@@ -236,7 +236,7 @@ def _load_pretty_j1939() -> bool:
     except ImportError:
         log.debug("pretty_j1939 not installed")
         return False
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         log.warning("pretty_j1939 load failed: %s", exc)
         return False
 
