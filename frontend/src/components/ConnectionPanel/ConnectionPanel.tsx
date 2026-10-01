@@ -9,6 +9,15 @@ const BITRATES = [
   { label: '1 Mbps',   value: 1000000 },
 ];
 
+const DATA_BITRATES = [
+  { label: '500 kbps', value: 500000 },
+  { label: '1 Mbps',   value: 1000000 },
+  { label: '2 Mbps',   value: 2000000 },
+  { label: '4 Mbps',   value: 4000000 },
+  { label: '5 Mbps',   value: 5000000 },
+  { label: '8 Mbps',   value: 8000000 },
+];
+
 const BAUDRATES = [
   { label: '9.6 kBd',   value: 9600 },
   { label: '19.2 kBd',  value: 19200 },
@@ -201,7 +210,7 @@ export function ConnectionPanel() {
       {/* Bitrate - not shown for virtual */}
       {config.interface !== 'virtual' && (
         <div className="field-group">
-          <label className="field-label">Bitrate</label>
+          <label className="field-label">Nominal Bitrate</label>
           <select
             className="field-select"
             value={config.bitrate}
@@ -209,6 +218,43 @@ export function ConnectionPanel() {
             onChange={(e) => setConfig({ bitrate: parseInt(e.target.value) })}
           >
             {BITRATES.map((b) => (
+              <option key={b.value} value={b.value}>{b.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* CAN FD Mode Toggle */}
+      <div className="field-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid var(--border-subtle)', marginTop: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="checkbox"
+            id="canfd-toggle"
+            checked={config.fd ?? false}
+            disabled={isConnected || isBusy}
+            onChange={(e) => setConfig({ fd: e.target.checked })}
+            style={{ cursor: isConnected || isBusy ? 'default' : 'pointer', accentColor: 'var(--accent-blue)', margin: 0 }}
+          />
+          <label htmlFor="canfd-toggle" className="field-label" style={{ margin: 0, cursor: 'pointer', fontWeight: 600, color: config.fd ? 'var(--accent-blue)' : 'var(--text-secondary)' }}>
+            Enable CAN FD
+          </label>
+        </div>
+        {config.fd && (
+          <span className="badge badge-blue" style={{ fontSize: 9 }}>FD</span>
+        )}
+      </div>
+
+      {/* Data Bitrate for CAN FD */}
+      {config.fd && (
+        <div className="field-group">
+          <label className="field-label">Data Bitrate (FD)</label>
+          <select
+            className="field-select"
+            value={config.data_bitrate ?? 2000000}
+            disabled={isConnected || isBusy}
+            onChange={(e) => setConfig({ data_bitrate: parseInt(e.target.value) })}
+          >
+            {DATA_BITRATES.map((b) => (
               <option key={b.value} value={b.value}>{b.label}</option>
             ))}
           </select>

@@ -17,6 +17,7 @@ interface LogStore {
   recordingStart: number | null;
   ascUrl: string | null;
   csvUrl: string | null;
+  mf4Url: string | null;
   logError: string | null;
 
   // Replay
@@ -53,6 +54,7 @@ export const useLogStore = create<LogStore>((set, get) => ({
   recordingStart: null,
   ascUrl: null,
   csvUrl: null,
+  mf4Url: null,
   logError: null,
 
   replaying: false,
@@ -68,7 +70,7 @@ export const useLogStore = create<LogStore>((set, get) => ({
   // ============================================================
 
   startRecording: async () => {
-    set({ logError: null, ascUrl: null, csvUrl: null });
+    set({ logError: null, ascUrl: null, csvUrl: null, mf4Url: null });
     try {
       const res = await apiLogStart();
       set({ recording: true, base: res.base, recordingStart: Date.now() });
@@ -84,12 +86,14 @@ export const useLogStore = create<LogStore>((set, get) => ({
       // Build download URLs from filenames returned by backend
       const ascUrl = getLogDownloadUrl(basename(res.asc_file));
       const csvUrl = getLogDownloadUrl(basename(res.csv_file));
+      const mf4Url = res.mf4_file ? getLogDownloadUrl(basename(res.mf4_file)) : null;
       set({
         recording: false,
         base: null,
         recordingStart: null,
         ascUrl,
         csvUrl,
+        mf4Url,
       });
     } catch (e) {
       set({ logError: (e as Error).message, recording: false });

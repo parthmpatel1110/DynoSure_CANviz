@@ -13,6 +13,8 @@ export interface TransmitFrame {
   dlc:        number;
   data:       string;   // "FF 00 3C ..."
   isExtended: boolean;
+  isFd:       boolean;
+  bitrateSwitch: boolean;
   intervalMs: number;   // 0 = manual only
   isRunning:  boolean;
   lastSent:   string | null;
@@ -25,7 +27,7 @@ function makeFrame(): TransmitFrame {
   return {
     id: uid(), canId: '0x123', dlc: 8,
     data: '00 00 00 00 00 00 00 00',
-    isExtended: false, intervalMs: 100,
+    isExtended: false, isFd: false, bitrateSwitch: false, intervalMs: 100,
     isRunning: false, lastSent: null, error: null,
   };
 }
@@ -54,9 +56,19 @@ async function doSend(f: TransmitFrame): Promise<string> {
   if (data === null) throw new Error('Invalid data bytes');
   while (data.length < f.dlc) data.push(0);
   const trimmed = data.slice(0, f.dlc);
-  await apiSendFrame({ id, dlc: f.dlc, data: trimmed, is_extended_id: f.isExtended });
+  await apiSendFrame({
+    id,
+    dlc: f.dlc,
+    data: trimmed,
+    is_extended_id: f.isExtended,
+    is_fd: f.isFd,
+    bitrate_switch: f.bitrateSwitch,
+  });
+  const tag = f.isFd
+    ? (f.bitrateSwitch ? '[FD+BRS]' : '[FD]')
+    : (f.isExtended ? '[EXT]' : '[STD]');
   return (
-    `${f.isExtended ? '[EXT]' : '[STD]'} 0x${id.toString(16).toUpperCase()}` +
+    `${tag} 0x${id.toString(16).toUpperCase()}` +
     ` [${f.dlc}] ${trimmed.map((b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')}`
   );
 }

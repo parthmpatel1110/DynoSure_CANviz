@@ -49,14 +49,27 @@ export function FilterBar() {
   );
 
   const clearAll = () => {
-    setFilter({ idText: '', signalName: '' });
+    setFilter({ idText: '', signalName: '', frameType: 'all' });
     writeUrlParams('', '');
   };
 
-  const hasFilter = filter.idText.trim() || filter.signalName.trim();
+  const hasFilter = filter.idText.trim() || filter.signalName.trim() || (filter.frameType && filter.frameType !== 'all');
 
   return (
     <div>
+      <div className="field-group">
+        <label className="field-label">Frame Type</label>
+        <select
+          className="field-input"
+          value={filter.frameType ?? 'all'}
+          onChange={(e) => setFilter({ frameType: e.target.value as 'all' | 'fd' | 'classic' })}
+        >
+          <option value="all">All Frames</option>
+          <option value="fd">CAN FD Only</option>
+          <option value="classic">Classical CAN Only</option>
+        </select>
+      </div>
+
       <div className="field-group">
         <label className="field-label">ID Filter</label>
         <input

@@ -52,6 +52,8 @@ class BusManager:
         self._open_bitrate: int = 0
         self._open_index: int = 0
         self._open_serial_baudrate: int = 0  
+        self._open_fd: bool = False
+        self._open_data_bitrate: int = 2_000_000
         self._echoes_sent_frames: bool = False
 
     @property
@@ -62,6 +64,14 @@ class BusManager:
     def error(self) -> str | None:
         return self._error
 
+    @property
+    def is_fd(self) -> bool:
+        return self._open_fd
+
+    @property
+    def bus(self) -> can.BusABC | None:
+        return self._bus
+
     def add_frame_callback(self, cb: Callable[[Message], None]) -> None:
         if cb not in self._frame_callbacks:
             self._frame_callbacks.append(cb)
@@ -71,19 +81,39 @@ class BusManager:
 
     async def connect(
         self,
-        interface: InterfaceType,
+        interface: InterfaceType | Any,
         channel: str = "",
         bitrate: int = 500_000,
         index: int = 0,
-        baudrate: int = 115_200
+        baudrate: int = 115_200,
+        fd: bool = False,
+        data_bitrate: int = 2_000_000,
     ) -> None:
+        if hasattr(interface, "interface"):
+            cfg = interface
+            interface = cfg.interface
+            channel = getattr(cfg, "channel", channel)
+            bitrate = getattr(cfg, "bitrate", bitrate)
+            index = getattr(cfg, "index", index)
+            baudrate = getattr(cfg, "baudrate", baudrate)
+            fd = getattr(cfg, "fd", fd)
+            data_bitrate = getattr(cfg, "data_bitrate", data_bitrate)
+
         if self._connected or self._bus is not None:
             await self.disconnect()
 
         self._error = None
 
         try:
-            self._bus = _open_bus(interface, channel, bitrate, index, baudrate)
+            self._bus = _open_bus(
+                interface=interface,
+                channel=channel,
+                bitrate=bitrate,
+                index=index,
+                serial_baudrate=baudrate,
+                fd=fd,
+                data_bitrate=data_bitrate,
+            )
         except Exception as exc:
             self._error = str(exc)
             log.error("Bus open failed: %s", exc)
@@ -94,6 +124,8 @@ class BusManager:
         self._open_bitrate   = bitrate
         self._open_serial_baudrate = baudrate
         self._open_index     = index
+        self._open_fd        = fd
+        self._open_data_bitrate = data_bitrate
 
         self._echoes_sent_frames = interface in ("gs_usb", "virtual", "dynosure-slcan")
 
@@ -101,6 +133,8 @@ class BusManager:
         settings.channel   = channel
         settings.bitrate   = bitrate
         settings.index     = index
+        settings.fd        = fd
+        settings.data_bitrate = data_bitrate
 
         self._open_time  = time.monotonic()
         self._connected  = True
@@ -108,8 +142,8 @@ class BusManager:
             self._reader_loop(), name="can-reader"
         )
         log.info(
-            "Connected: interface=%s channel=%s bitrate=%d",
-            interface, channel, bitrate,
+            "Connected: interface=%s channel=%s bitrate=%d fd=%s data_bitrate=%d",
+            interface, channel, bitrate, fd, data_bitrate,
         )
 
     async def disconnect(self) -> None:
@@ -142,6 +176,8 @@ class BusManager:
             self._open_bitrate = 0
             self._open_index = 0
             self._open_serial_baudrate = 0
+            self._open_fd = False
+            self._open_data_bitrate = 2_000_000
 
             await asyncio.sleep(0.5)
 
@@ -153,13 +189,22 @@ class BusManager:
         """
         await self.disconnect()
 
-    async def send(self, arbitration_id: int, data: list[int], is_extended_id: bool = False) -> None:
+    async def send(
+        self,
+        arbitration_id: int,
+        data: list[int],
+        is_extended_id: bool = False,
+        is_fd: bool = False,
+        bitrate_switch: bool = False,
+    ) -> None:
         if not self._connected or self._bus is None:
             raise RuntimeError("Not connected — call /connect first")
         msg = can.Message(
             arbitration_id=arbitration_id,
             data=bytes(data),
             is_extended_id=is_extended_id,
+            is_fd=is_fd,
+            bitrate_switch=bitrate_switch,
         )
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._bus.send, msg)
@@ -322,13 +367,22 @@ import queue
 
 
 class DynoSureSlcanBus(can.BusABC):
-    def __init__(self, channel: str = "", bitrate: int = 500000, index: int = 0, **kwargs):
+    def __init__(
+        self,
+        channel: str = "",
+        bitrate: int = 500000,
+        index: int = 0,
+        fd: bool = False,
+        data_bitrate: int = 2000000,
+        **kwargs
+    ):
         super().__init__(channel=channel, **kwargs)
         
         import slcanv1
         self._slcan = slcanv1.SlcanV2()
         self._queue = queue.Queue()
         self._port = None
+        self.is_fd = fd
         
         devs = self._slcan.enum_devices()
         if not devs:
@@ -371,10 +425,16 @@ class DynoSureSlcanBus(can.BusABC):
             
         # Set bitrate using 160 MHz clock calculations
         brp = int(8_000_000 / bitrate)
-        rc = self._slcan.set_bitrate_advanced(is_fd=0, brp=brp, seg1=15, seg2=4, port_name=self._port)
+        rc = self._slcan.set_bitrate_advanced(
+            is_fd=1 if fd else 0,
+            brp=brp,
+            seg1=15,
+            seg2=4,
+            port_name=self._port
+        )
         if rc != 0:
             self._slcan.close(self._port)
-            raise ValueError(f"Failed to set bitrate {bitrate} (brp={brp})")
+            raise ValueError(f"Failed to set bitrate {bitrate} (brp={brp}, is_fd={fd})")
             
         def _rx_wrapper(packet_ptr):
             import contextlib
@@ -417,7 +477,7 @@ class DynoSureSlcanBus(can.BusABC):
         import slcanv1
         pkt = slcanv1.SlcanV2.PacketFD()
         pkt.id = msg.arbitration_id
-        pkt.dlc = msg.dlc
+        pkt.dlc = len(msg.data)
         pkt.ext = 1 if msg.is_extended_id else 0
         pkt.fd = 1 if msg.is_fd else 0
         pkt.rtr = 1 if msg.is_remote_frame else 0
@@ -446,13 +506,26 @@ def _open_bus(
     bitrate: int,
     index: int,
     serial_baudrate: int = 115200,
+    fd: bool = False,
+    data_bitrate: int = 2_000_000,
 ) -> can.BusABC:
     if interface == "dynosure-slcan":
         _ensure_libusb()
-        return DynoSureSlcanBus(channel=channel, bitrate=bitrate, index=index)
+        return DynoSureSlcanBus(
+            channel=channel,
+            bitrate=bitrate,
+            index=index,
+            fd=fd,
+            data_bitrate=data_bitrate,
+        )
 
     elif interface == "gs_usb":
         _ensure_libusb()
+        if fd:
+            try:
+                return can.Bus(interface="gs_usb", channel=index, bitrate=bitrate, fd=True, data_bitrate=data_bitrate)
+            except (TypeError, ValueError, can.CanError):
+                log.warning("gs_usb: CAN FD not accepted by hardware/driver, falling back to Classic CAN.")
         return can.Bus(interface="gs_usb", channel=index, bitrate=bitrate)
 
     elif interface == "slcan":
@@ -477,17 +550,35 @@ def _open_bus(
     elif interface == "socketcan":
         if not channel:
             raise ValueError("socketcan requires a channel (e.g. can0)")
-        return can.Bus(interface="socketcan", channel=channel, bitrate=bitrate)
+        kwargs: dict = {"interface": "socketcan", "channel": channel, "bitrate": bitrate}
+        if fd:
+            kwargs["fd"] = True
+            if data_bitrate:
+                kwargs["data_bitrate"] = data_bitrate
+        return can.Bus(**kwargs)
 
     elif interface == "virtual":
-        return can.Bus(interface="virtual", channel="vcan0", receive_own_messages=True)
+        kwargs: dict = {"interface": "virtual", "channel": "vcan0", "receive_own_messages": True}
+        if fd:
+            kwargs["fd"] = True
+        return can.Bus(**kwargs)
 
     elif interface == "pcan":
         ch = channel if channel else "PCAN_USBBUS1"
-        return can.Bus(interface="pcan", channel=ch, bitrate=bitrate)
+        kwargs: dict = {"interface": "pcan", "channel": ch, "bitrate": bitrate}
+        if fd:
+            kwargs["fd"] = True
+            if data_bitrate:
+                kwargs["data_bitrate"] = data_bitrate
+        return can.Bus(**kwargs)
 
     elif interface == "kvaser":
-        return can.Bus(interface="kvaser", channel=index, bitrate=bitrate)
+        kwargs: dict = {"interface": "kvaser", "channel": index, "bitrate": bitrate}
+        if fd:
+            kwargs["fd"] = True
+            if data_bitrate:
+                kwargs["data_bitrate"] = data_bitrate
+        return can.Bus(**kwargs)
 
     elif interface == "vector":
         ch = channel if channel else 0
@@ -495,7 +586,12 @@ def _open_bus(
             ch = int(ch)
         except ValueError:
             pass
-        return can.Bus(interface="vector", channel=ch, bitrate=bitrate)
+        kwargs: dict = {"interface": "vector", "channel": ch, "bitrate": bitrate}
+        if fd:
+            kwargs["fd"] = True
+            if data_bitrate:
+                kwargs["data_bitrate"] = data_bitrate
+        return can.Bus(**kwargs)
 
     elif interface == "seeedstudio":
         if not channel:
@@ -510,7 +606,7 @@ def _open_bus(
     else:
         raise ValueError(
             f"Unknown interface: {interface!r}. "
-            "Choose: gs_usb, slcan, socketcan, virtual, pcan, kvaser, seeedstudio, vector"
+            "Choose: gs_usb, slcan, socketcan, virtual, pcan, kvaser, seeedstudio, vector, dynosure-slcan"
         )
 
 
@@ -520,12 +616,22 @@ def open_bus(
     bitrate: int = 500_000,
     index: int = 0,
     serial_baudrate: int = 115200,  
+    fd: bool = False,
+    data_bitrate: int = 2_000_000,
 ) -> can.BusABC:
     """
     Public wrapper around _open_bus().
     Used by CLI subcommands (monitor, capture) that bypass FastAPI entirely.
     """
-    return _open_bus(interface, channel, bitrate, index, serial_baudrate)
+    return _open_bus(
+        interface=interface,
+        channel=channel,
+        bitrate=bitrate,
+        index=index,
+        serial_baudrate=serial_baudrate,
+        fd=fd,
+        data_bitrate=data_bitrate,
+    )
 
 
 # Singleton

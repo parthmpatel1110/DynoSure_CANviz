@@ -33,7 +33,7 @@ import time
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import can
 import typer
@@ -85,8 +85,16 @@ IndexOpt = Annotated[
     typer.Option("--index", help="gs_usb device index when multiple devices are attached"),
 ]
 DbcOpt = Annotated[
-    Path | None,
+    Optional[Path],
     typer.Option("--dbc", help="Path to a .dbc file for signal decoding"),
+]
+FdOpt = Annotated[
+    bool,
+    typer.Option("--fd", help="Enable CAN FD mode"),
+]
+DataBitrateOpt = Annotated[
+    int,
+    typer.Option("--data-bitrate", help="CAN FD data bitrate in bps (e.g. 2000000)"),
 ]
 
 
@@ -101,6 +109,8 @@ def root(
     index: IndexOpt = 0,
     bitrate: BitrateOpt = 500_000,
     baudrate: BaudrateOpt = 115_200,
+    fd: FdOpt = False,
+    data_bitrate: DataBitrateOpt = 2_000_000,
     host: Annotated[str, typer.Option("--host", help="Host to bind")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="Port to listen on")] = 8080,
     no_browser: Annotated[bool, typer.Option("--no-browser", help="Do not auto-open the browser")] = False,
@@ -120,6 +130,8 @@ def root(
         index=index,
         bitrate=bitrate,
         baudrate=baudrate,
+        fd=fd,
+        data_bitrate=data_bitrate,
         host=host,
         port=port,
         headless=no_browser,
@@ -137,6 +149,8 @@ def serve(
     index: IndexOpt = 0,
     bitrate: BitrateOpt = 500_000,
     baudrate: BaudrateOpt = 115_200,
+    fd: FdOpt = False,
+    data_bitrate: DataBitrateOpt = 2_000_000,
     host: Annotated[str, typer.Option("--host", help="Host to bind")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="Port to listen on")] = 8080,
     headless: Annotated[bool, typer.Option("--headless", help="Start API only - do not open a browser")] = False,
@@ -151,6 +165,8 @@ def serve(
         index=index,
         bitrate=bitrate,
         baudrate=baudrate,
+        fd=fd,
+        data_bitrate=data_bitrate,
         host=host,
         port=port,
         headless=headless or no_browser,
@@ -165,6 +181,8 @@ def _run_serve(
     index: int,
     bitrate: int,
     baudrate: int,
+    fd: bool,
+    data_bitrate: int,
     host: str,
     port: int,
     headless: bool,
@@ -179,6 +197,8 @@ def _run_serve(
     settings.host      = host
     settings.port      = port
     settings.baudrate  = baudrate
+    settings.fd        = fd
+    settings.data_bitrate = data_bitrate
 
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
@@ -220,7 +240,9 @@ def _run_serve(
             "channel":   channel,
             "bitrate":   bitrate,
             "index":     index,
-            "baudrate":  baudrate
+            "baudrate":  baudrate,
+            "fd":        fd,
+            "data_bitrate": data_bitrate,
         }).encode()
         req = urllib.request.Request(
             f"{base}/connect",
@@ -232,7 +254,8 @@ def _run_serve(
             with urllib.request.urlopen(req, timeout=10) as resp:
                 if resp.status == 200:
                     console.print(f"  [green]Auto-connected:[/] {interface}"
-                                  + (f" on {channel}" if channel else ""))
+                                  + (f" on {channel}" if channel else "")
+                                  + (f" [cyan][FD @ {data_bitrate} bps][/]" if fd else ""))
         except Exception as exc:  # noqa: BLE001
             err_console.print(f"  [yellow]Auto-connect failed:[/] {exc}")
             return
@@ -257,7 +280,7 @@ def _run_serve(
 
     # Only auto-connect when the user explicitly passed connection args.
     # Bare `canviz` (gs_usb + no channel) should just open the browser.
-    _should_auto_connect = (interface != "gs_usb") or bool(channel)
+    _should_auto_connect = (interface != "gs_usb") or bool(channel) or fd
     threading.Thread(target=_auto_connect, daemon=True, args=(_should_auto_connect,)).start()
 
     uvicorn.run(
@@ -276,6 +299,8 @@ def monitor(
     channel: ChannelOpt = "",
     index: IndexOpt = 0,
     bitrate: BitrateOpt = 500_000,
+    fd: FdOpt = False,
+    data_bitrate: DataBitrateOpt = 2_000_000,
     dbc: DbcOpt = None,
     j1939: Annotated[bool, typer.Option("--j1939", help="Enable J1939 decode - adds PGN and SA columns. Use 250 kbps for trucks/agriculture.")] = False,
     refresh_rate: Annotated[float, typer.Option("--refresh-rate", help="Table refresh rate in Hz")] = 4.0,
@@ -286,6 +311,7 @@ def monitor(
     Shows a Rich table that refreshes at 4 Hz. Each row is one unique CAN message ID.
     Columns: ID · Name (if DBC loaded) · DLC · Data (hex) · Count · Rate (fps) · Last Seen
     With --j1939: adds PGN and SA (Source Address) columns for J1939 traffic.
+    With --fd: enables CAN FD mode.
 
     Data column is colour-coded on change:
       Green  - byte sum increased since last frame
@@ -298,6 +324,7 @@ def monitor(
 
     Examples:
       canviz monitor --interface socketcan --channel can0
+      canviz monitor --interface virtual --fd
       canviz monitor --interface slcan --channel COM3 --bitrate 250000 --j1939
       canviz monitor --interface gs_usb --dbc vehicle.dbc
     """
@@ -329,7 +356,7 @@ def monitor(
 
     # Open the bus directly - no FastAPI involved
     try:
-        bus = open_bus(interface, channel, bitrate, index)
+        bus = open_bus(interface, channel, bitrate, index, fd=fd, data_bitrate=data_bitrate)
     except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] Could not open bus - {exc}", err=True)
         raise typer.Exit(code=1)
@@ -395,6 +422,8 @@ def monitor(
                     "prev_data": data, "last_time": now,
                     "first_time": now, "rate": 0.0, "name": name,
                     "j1939": j1939_info,
+                    "is_fd": getattr(msg, "is_fd", False),
+                    "bitrate_switch": getattr(msg, "bitrate_switch", False),
                 }
 
             row = rows[arb_id]
@@ -404,6 +433,8 @@ def monitor(
             row["dlc"]       = msg.dlc
             row["count"]    += 1
             row["last_time"] = now
+            row["is_fd"]     = getattr(msg, "is_fd", False)
+            row["bitrate_switch"] = getattr(msg, "bitrate_switch", False)
             if j1939_info:
                 row["j1939"] = j1939_info
             if elapsed > 0:
@@ -417,6 +448,7 @@ def monitor(
                 "dlc":  msg.dlc,
                 "data": data.hex(" ").upper(),
                 "name": rows[arb_id]["name"],
+                "is_fd": bool(getattr(msg, "is_fd", False)),
             }
             if j1939_info:
                 line["pgn"]     = j1939_info.get("pgn_hex", "")
@@ -467,6 +499,9 @@ def monitor(
             table.add_column("PGN Name", style="white",  no_wrap=True, min_width=22)
             table.add_column("SA",       style="yellow", no_wrap=True, min_width=12)
 
+        if fd:
+            table.add_column("Flags",    style="magenta", no_wrap=True, min_width=6)
+
         table.add_column("DLC",        style="dim",   no_wrap=True, min_width=4, justify="right")
         table.add_column("Data",       no_wrap=True,  min_width=24)
         table.add_column("Count",      justify="right", min_width=8)
@@ -499,18 +534,31 @@ def monitor(
             else:
                 data_text = Text(hex_data, style="white")
 
+            flags_list = []
+            if row.get("is_fd"):
+                flags_list.append("FD")
+            if row.get("bitrate_switch"):
+                flags_list.append("BRS")
+            flags_str = " ".join(flags_list) if flags_list else "-"
+
             if j1939:
                 j = row.get("j1939") or {}
                 pgn_hex  = j.get("pgn_hex",  "-")
                 pgn_name = j.get("pgn_name", "-")
-                # Truncate long PGN names for terminal width
                 if len(pgn_name) > 28:
                     pgn_name = pgn_name[:26] + "…"
                 sa_str   = f"{j.get('sa_hex','-')} {j.get('sa_name','')}"
-                table.add_row(hex_id, name, pgn_hex, pgn_name, sa_str,
-                              dlc, data_text, count, rate, age_str)
+                if fd:
+                    table.add_row(hex_id, name, pgn_hex, pgn_name, sa_str, flags_str,
+                                  dlc, data_text, count, rate, age_str)
+                else:
+                    table.add_row(hex_id, name, pgn_hex, pgn_name, sa_str,
+                                  dlc, data_text, count, rate, age_str)
             else:
-                table.add_row(hex_id, name, dlc, data_text, count, rate, age_str)
+                if fd:
+                    table.add_row(hex_id, name, flags_str, dlc, data_text, count, rate, age_str)
+                else:
+                    table.add_row(hex_id, name, dlc, data_text, count, rate, age_str)
 
         return table
 
@@ -757,13 +805,15 @@ def capture(
     interface: InterfaceOpt = "gs_usb",
     channel: ChannelOpt = "",
     index: IndexOpt = 0,
-    bitrate: BitrateOpt = 500_000, 
+    bitrate: BitrateOpt = 500_000,
+    fd: FdOpt = False,
+    data_bitrate: DataBitrateOpt = 2_000_000,
     output: Annotated[
-        Path | None,
+        Optional[Path],
         typer.Option("--output", "-o", help="Output file path (default: canviz_YYYYMMDD_HHMMSS.json)"),
     ] = None,
     duration: Annotated[
-        float | None,
+        Optional[float],
         typer.Option("--duration", "-d", help="Capture duration in seconds (default: run until Ctrl+C)"),
     ] = None,
 ) -> None:
@@ -775,6 +825,7 @@ def capture(
 
     Examples:
       canviz capture --interface virtual --duration 30
+      canviz capture --interface virtual --fd
       canviz capture --interface socketcan --channel can0 --output run1.json
       canviz capture --interface slcan --channel COM3 --serial-baudrate 2000000
     """
@@ -783,12 +834,14 @@ def capture(
         output = Path(f"canviz_{ts}.json")
 
     try:
-        bus = open_bus(interface, channel, bitrate, index,)
+        bus = open_bus(interface, channel, bitrate, index, fd=fd, data_bitrate=data_bitrate)
     except Exception as exc:  # noqa: BLE001
         console.print(f"  [red]Error:[/] Could not open bus - {exc}", err=True)
         raise typer.Exit(code=1)
 
     console.print(f"  [bold green]Capturing[/] → [cyan]{output}[/]", end="")
+    if fd:
+        console.print(f" [cyan][FD @ {data_bitrate} bps][/]", end="")
     if duration:
         console.print(f"  (max [cyan]{duration}s[/])", end="")
     console.print("  - [dim]Ctrl+C to stop[/]")
@@ -822,6 +875,7 @@ def capture(
                     "is_extended_id": msg.is_extended_id,
                     "is_error_frame": msg.is_error_frame,
                     "is_fd":    getattr(msg, "is_fd", False),
+                    "bitrate_switch": getattr(msg, "bitrate_switch", False),
                 })
             except Exception as exc:  # noqa: BLE001
                 err_console.print(f"  [red]recv error:[/] {exc}")
@@ -893,7 +947,7 @@ def decode(
         typer.Option("--format", "-f", help="Output format: json | csv"),
     ] = "json",
     output: Annotated[
-        Path | None,
+        Optional[Path],
         typer.Option("--output", "-o", help="Output file path. If omitted, writes to stdout (for shell pipelines)."),
     ] = None,
 ) -> None:

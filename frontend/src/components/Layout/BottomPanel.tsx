@@ -3,9 +3,11 @@ import { SendFramePanel } from '../SendFramePanel/SendFramePanel';
 import { LogControls } from '../LogControls/LogControls';
 import { ReplayPanel } from '../ReplayPanel/ReplayPanel';
 import { SignalPlot } from '../SignalPlot/SignalPlot';
+import { FlasherPanel } from '../FlasherPanel/FlasherPanel';
 
 const TABS = [
   { id: 'send',   label: 'Send Frame' },
+  { id: 'flasher', label: 'CAN Flasher' },
   { id: 'log',    label: 'Record' },
   { id: 'replay', label: 'Replay' },
   { id: 'plot',   label: 'Plot' },
@@ -88,10 +90,11 @@ export function BottomPanel() {
 
       {/* Content */}
       <div style={styles.content}>
-        {activeTab === 'send'   && <SendFramePanel />}
-        {activeTab === 'log'    && <LogControls />}
-        {activeTab === 'replay' && <ReplayPanel />}
-        {activeTab === 'plot'   && <SignalPlot />}
+        {activeTab === 'send'    && <SendFramePanel />}
+        {activeTab === 'flasher' && <FlasherPanel />}
+        {activeTab === 'log'     && <LogControls />}
+        {activeTab === 'replay'  && <ReplayPanel />}
+        {activeTab === 'plot'    && <SignalPlot />}
       </div>
     </div>
   );

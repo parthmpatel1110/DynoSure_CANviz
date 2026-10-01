@@ -24,6 +24,7 @@ from canviz.bus import bus_manager
 from canviz.routers import connect, dbc, frames, log
 from canviz.routers import stats as stats_router
 from canviz.routers.canopen import router as canopen_router
+from canviz.routers.flasher import router as flasher_router
 from canviz.routers.j1939 import router as j1939_router
 from canviz.routers.replay import router as replay_router
 from canviz.routers.replay import set_broadcast_fn
@@ -86,6 +87,7 @@ app.include_router(stats_router.router)
 app.include_router(j1939_router)
 app.include_router(canopen_router)
 app.include_router(replay_router)
+app.include_router(flasher_router)
 
 
 async def _replay_broadcast(frame_dict: dict) -> None:

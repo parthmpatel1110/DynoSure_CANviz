@@ -32,9 +32,11 @@ class StatsStore:
 
     # ── connection lifecycle ───────────────────────────────────────────────
 
-    def on_connect(self, bitrate: int) -> None:
+    def on_connect(self, bitrate: int, fd: bool = False, data_bitrate: int = 2_000_000) -> None:
         with self._lock:
             self._bitrate = bitrate
+            self._fd = fd
+            self._data_bitrate = data_bitrate
             self._connect_time = time.monotonic()
             self._reset()
 

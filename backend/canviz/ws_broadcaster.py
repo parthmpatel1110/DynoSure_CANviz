@@ -124,15 +124,17 @@ class WSBroadcaster:
         )
 
         frame: dict = {
-            "type":           "frame",
-            "id":             hex(msg.arbitration_id),
-            "dlc":            msg.dlc,
-            "data":           list(msg.data),
-            "timestamp":      round(msg.timestamp, 6),
-            "is_extended_id": msg.is_extended_id,
-            "is_fd":          msg.is_fd,
-            "channel":        0,
-            "signals":        signals,
+            "type":                  "frame",
+            "id":                    hex(msg.arbitration_id),
+            "dlc":                   msg.dlc,
+            "data":                  list(msg.data),
+            "timestamp":             round(msg.timestamp, 6),
+            "is_extended_id":        msg.is_extended_id,
+            "is_fd":                 bool(getattr(msg, "is_fd", False)),
+            "bitrate_switch":        bool(getattr(msg, "bitrate_switch", False)),
+            "error_state_indicator": bool(getattr(msg, "error_state_indicator", False)),
+            "channel":               0,
+            "signals":               signals,
         }
 
         if j1939_info is not None:

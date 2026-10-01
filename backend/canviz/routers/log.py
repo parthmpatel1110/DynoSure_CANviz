@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import aiofiles
+import can
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
@@ -39,6 +40,13 @@ class LogSession:
         self.base    = base
         self.asc_path = LOG_DIR / f"{base}.asc"
         self.csv_path = LOG_DIR / f"{base}.csv"
+        self.mf4_path = LOG_DIR / f"{base}.mf4"
+        self._mf4_writer: can.MF4Writer | None = None
+        try:
+            self._mf4_writer = can.MF4Writer(str(self.mf4_path))
+        except Exception as exc:
+            log.warning("Could not initialize MF4Writer: %s", exc)
+
         self._queue: asyncio.Queue = asyncio.Queue()
         self._task: asyncio.Task | None = None
         self._start_time = time.monotonic()
@@ -49,7 +57,7 @@ class LogSession:
             self._writer_loop(), name="log-writer"
         )
         bus_manager.add_frame_callback(self._on_frame)
-        log.info("Logging started → %s / %s", self.asc_path, self.csv_path)
+        log.info("Logging started → %s / %s / %s", self.asc_path, self.csv_path, self.mf4_path)
 
     async def stop(self) -> dict:
         bus_manager.remove_frame_callback(self._on_frame)
@@ -57,11 +65,14 @@ class LogSession:
         if self._task:
             await self._task
         log.info("Logging stopped. %d frames written.", self._count)
-        return {
+        res = {
             "frames":   self._count,
             "asc_file": str(self.asc_path),
             "csv_file": str(self.csv_path),
         }
+        if self.mf4_path.exists():
+            res["mf4_file"] = str(self.mf4_path)
+        return res
 
     def _on_frame(self, msg) -> None:
         try:
@@ -79,7 +90,7 @@ class LogSession:
             await asc_f.write("no internal events logged\n")
 
             # CSV header
-            await csv_f.write("timestamp,id,dlc,data,is_extended_id\n")
+            await csv_f.write("timestamp,id,dlc,data,is_extended_id,is_fd,bitrate_switch\n")
 
             while True:
                 msg = await self._queue.get()
@@ -90,16 +101,41 @@ class LogSession:
                 id_s = f"{msg.arbitration_id:X}"
                 data = " ".join(f"{b:02x}" for b in msg.data)
                 ext  = "1" if msg.is_extended_id else "0"
+                is_fd = bool(getattr(msg, "is_fd", False))
+                brs   = bool(getattr(msg, "bitrate_switch", False))
 
-                # ASC line:  timestamp  channel  id  dir  dlc  data
-                await asc_f.write(
-                    f"   {ts:.6f} 1  {id_s}  Rx   d {msg.dlc}  {data}\n"
-                )
+                # ASC line: CAN FD vs Classic CAN
+                if is_fd:
+                    brs_flag = "1" if brs else "0"
+                    esi_flag = "1" if getattr(msg, "error_state_indicator", False) else "0"
+                    data_len = len(msg.data)
+                    await asc_f.write(
+                        f"   {ts:.6f} CANFD 1 Rx {id_s}   {brs_flag} {esi_flag} {data_len:2d} {msg.dlc:2d}  {data}\n"
+                    )
+                else:
+                    await asc_f.write(
+                        f"   {ts:.6f} 1  {id_s}  Rx   d {msg.dlc}  {data}\n"
+                    )
+
                 # CSV line
                 await csv_f.write(
-                    f"{ts},{id_s},{msg.dlc},{data.replace(' ', '')},{ext}\n"
+                    f"{ts},{id_s},{msg.dlc},{data.replace(' ', '')},{ext},{1 if is_fd else 0},{1 if brs else 0}\n"
                 )
+
+                # MF4 binary recording
+                if self._mf4_writer is not None:
+                    try:
+                        self._mf4_writer.on_message_received(msg)
+                    except Exception as exc:
+                        log.debug("MF4 write failed: %s", exc)
+
                 self._count += 1
+
+            if self._mf4_writer is not None:
+                try:
+                    self._mf4_writer.stop()
+                except Exception as exc:
+                    log.warning("MF4 writer close error: %s", exc)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -133,7 +169,11 @@ async def log_download(filename: str):
     # Sanitise — only allow files inside LOG_DIR
     target = (LOG_DIR / filename).resolve()
     if not str(target).startswith(str(LOG_DIR.resolve())):
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-    if not target.exists():
+        raise HTTPException(status_code=400, detail="Invalid path.")
+    if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
-    return FileResponse(path=str(target), filename=filename)
+
+    media_type = "application/octet-stream"
+    if filename.endswith(".asc") or filename.endswith(".csv"):
+        media_type = "text/plain"
+    return FileResponse(path=target, filename=filename, media_type=media_type)

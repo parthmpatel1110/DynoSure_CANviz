@@ -96,6 +96,7 @@ export const useFrameStore = create<FrameStore>((set, get) => ({
       lastSeen:       nowMs,
       isExtended:     frame.is_extended_id,
       isFd:           frame.is_fd,
+      bitrateSwitch:  frame.bitrate_switch,
       flashKey:       nowMs,
       decodedSignals: signals,
       j1939:          frame.j1939,
@@ -161,6 +162,12 @@ export const useFrameStore = create<FrameStore>((set, get) => ({
 
 function applyFilter(rows: FrameRow[], filter: FilterState): FrameRow[] {
   let result = rows;
+
+  if (filter.frameType === 'fd') {
+    result = result.filter((r) => r.isFd);
+  } else if (filter.frameType === 'classic') {
+    result = result.filter((r) => !r.isFd);
+  }
 
   if (filter.idText.trim()) {
     const { min, max } = parseIdFilter(filter.idText);

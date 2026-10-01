@@ -34,6 +34,10 @@ class CANConfig:
     # Bitrate in bps — must match the bus being sniffed
     bitrate: int = 500_000
 
+    # CAN FD configuration
+    fd: bool = False
+    data_bitrate: int = 2_000_000
+
     # Host / port the HTTP + WS server listens on
     host: str = "127.0.0.1"
     port: int = 8080
@@ -44,7 +48,9 @@ class CANConfig:
             "index": self.index,
             "channel": self.channel,
             "bitrate": self.bitrate,
-            "baudrate": self.baudrate
+            "baudrate": self.baudrate,
+            "fd": self.fd,
+            "data_bitrate": self.data_bitrate,
         }
 
 

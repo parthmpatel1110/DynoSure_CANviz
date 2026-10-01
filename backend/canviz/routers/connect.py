@@ -44,13 +44,15 @@ async def connect(req: ConnectRequest):
             channel=channel,
             bitrate=req.bitrate,
             index=index,
-            baudrate=baudrate
+            baudrate=baudrate,
+            fd=req.fd,
+            data_bitrate=req.data_bitrate,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
 
     bus_manager.add_frame_callback(broadcaster.on_frame)
-    stats.on_connect(bitrate=req.bitrate)
+    stats.on_connect(bitrate=req.bitrate, fd=req.fd, data_bitrate=req.data_bitrate)
     broadcaster.start()
 
     return _status()
@@ -77,5 +79,7 @@ def _status() -> ConnectionStatus:
         channel=settings.channel,
         bitrate=settings.bitrate,
         index=settings.index,
+        fd=settings.fd,
+        data_bitrate=settings.data_bitrate,
         error=bus_manager.error,
     )

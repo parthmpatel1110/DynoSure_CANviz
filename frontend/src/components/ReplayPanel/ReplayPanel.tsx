@@ -101,13 +101,13 @@ export function ReplayPanel() {
             onDragOver={(e) => e.preventDefault()}
           >
             <div className="file-drop-text">
-              Drop .asc or .csv log file or click to browse
+              Drop .asc, .csv, or .mf4 log file or click to browse
             </div>
           </div>
           <input
             ref={fileRef}
             type="file"
-            accept=".asc,.csv"
+            accept=".asc,.csv,.mf4"
             style={{ display: 'none' }}
             onChange={handleFile}
           />

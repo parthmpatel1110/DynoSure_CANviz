@@ -114,24 +114,39 @@ def set_broadcast_fn(fn) -> None:
 _ASC_RE = re.compile(
     r"^\s*(\d+\.\d+)\s+\d+\s+([0-9A-Fa-f]+)\s+\w+\s+d\s+(\d+)\s+((?:[0-9A-Fa-f]{2}\s*)*)"
 )
+# CAN FD ASC line example:
+#   0.123456 CANFD 1 Rx 123   1 0 16 10  FF 00 3C ...
+_ASC_FD_RE = re.compile(
+    r"^\s*(\d+\.\d+)\s+CANFD\s+\d+\s+\w+\s+([0-9A-Fa-f]+)\s+([01])\s+([01])\s+(\d+)\s+(\d+)\s+((?:[0-9A-Fa-f]{2}\s*)*)"
+)
 
 
 def _parse_asc(content: str):
-    """Yield (timestamp_s, id, dlc, data_bytes) from an ASC log."""
+    """Yield (timestamp_s, id, dlc, data_bytes, is_fd, bitrate_switch) from an ASC log."""
     for line in content.splitlines():
+        m_fd = _ASC_FD_RE.match(line)
+        if m_fd:
+            ts = float(m_fd.group(1))
+            fid = int(m_fd.group(2), 16)
+            brs = m_fd.group(3) == "1"
+            byte_len = int(m_fd.group(5))
+            data = [int(b, 16) for b in m_fd.group(7).split() if b]
+            yield ts, fid, byte_len, data[:byte_len], True, brs
+            continue
+
         m = _ASC_RE.match(line)
         if m:
             ts   = float(m.group(1))
             fid  = int(m.group(2), 16)
             dlc  = int(m.group(3))
             data = [int(b, 16) for b in m.group(4).split() if b]
-            yield ts, fid, dlc, data[:dlc]
+            yield ts, fid, dlc, data[:dlc], False, False
 
 
 def _parse_csv(content: str):
-    """Yield (timestamp_s, id, dlc, data_bytes) from a CANvas CSV log.
+    """Yield (timestamp_s, id, dlc, data_bytes, is_fd, bitrate_switch) from a CANvas CSV log.
 
-    Expected columns: timestamp, id, dlc, data, is_extended_id
+    Expected columns: timestamp, id, dlc, data, is_extended_id, [is_fd, bitrate_switch]
     Backend writes:
       - id   as bare hex without 0x prefix (e.g. "100", "1FF")
       - data as concatenated hex pairs without spaces (e.g. "FFDEADBEEF000000")
@@ -146,9 +161,29 @@ def _parse_csv(content: str):
             # Data is concatenated hex pairs — split every 2 chars
             raw  = row.get("data", "").strip()
             data = [int(raw[i:i+2], 16) for i in range(0, len(raw), 2) if raw[i:i+2]]
-            yield ts, fid, dlc, data[:dlc]
+            is_fd = str(row.get("is_fd", "0")).strip() in ("1", "true", "True")
+            brs   = str(row.get("bitrate_switch", "0")).strip() in ("1", "true", "True")
+            yield ts, fid, dlc, data[:dlc], is_fd, brs
         except (KeyError, ValueError):
             continue
+
+
+def _parse_mf4(filepath: Path):
+    """Yield (timestamp_s, id, dlc, data_bytes, is_fd, bitrate_switch) from an MF4 log file."""
+    import can
+    try:
+        reader = can.MF4Reader(str(filepath))
+        for m in reader:
+            yield (
+                float(m.timestamp),
+                int(m.arbitration_id),
+                int(m.dlc),
+                list(m.data),
+                bool(getattr(m, "is_fd", False)),
+                bool(getattr(m, "bitrate_switch", False)),
+            )
+    except Exception as exc:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -162,14 +197,16 @@ async def _replay_worker(filepath: Path, speed: float, broadcast_fn) -> None:
     broadcast_fn should be the same callable used by the frame reader loop —
     imported from the connection manager at call time to avoid circular imports.
     """
-    content = filepath.read_text(errors="replace")
-
     # Choose parser
     suffix = filepath.suffix.lower()
     if suffix == ".asc":
+        content = filepath.read_text(errors="replace")
         frames = list(_parse_asc(content))
     elif suffix == ".csv":
+        content = filepath.read_text(errors="replace")
         frames = list(_parse_csv(content))
+    elif suffix in (".mf4", ".mdf"):
+        frames = list(_parse_mf4(filepath))
     else:
         return
 
@@ -180,7 +217,7 @@ async def _replay_worker(filepath: Path, speed: float, broadcast_fn) -> None:
     t0_log  = frames[0][0]          # first frame timestamp in log
     t0_wall = time.monotonic()
 
-    for i, (ts, fid, dlc, data) in enumerate(frames):
+    for i, (ts, fid, dlc, data, is_fd, brs) in enumerate(frames):
         if _session._stop_flag:
             break
 
@@ -201,25 +238,22 @@ async def _replay_worker(filepath: Path, speed: float, broadcast_fn) -> None:
             while sleep_for > 0 and not _session._stop_flag:
                 await asyncio.sleep(chunk)
                 if _session.paused:
-                    # Re-wait on resume; adjust t0_wall to account for pause duration
-                    pause_start = time.monotonic()
-                    await _session._pause_event.wait()
-                    pause_dur = time.monotonic() - pause_start
-                    t0_wall += pause_dur
-                sleep_for -= chunk
-                chunk = min(sleep_for, 0.05)
+                    break
+                now       = time.monotonic()
+                sleep_for = wall_target - now
 
-        if _session._stop_flag:
-            break
+        if _session.paused or _session._stop_flag:
+            continue
 
-        # Emit frame as JSON dict — broadcast_fn handles serialisation
+        # Broadcast frame dict shaped like a raw CANFrame
         frame_dict = {
-            "id":             fid,
-            "dlc":            dlc,
-            "data":           data,
-            "timestamp":      ts,
+            "id": hex(fid),
+            "dlc": dlc,
+            "data": data,
+            "timestamp": ts,
             "is_extended_id": fid > 0x7FF,
-            "is_fd":          False,
+            "is_fd": is_fd,
+            "bitrate_switch": brs,
             "decoded_signals": [],
         }
         import contextlib
@@ -238,10 +272,10 @@ async def _replay_worker(filepath: Path, speed: float, broadcast_fn) -> None:
 
 @router.post("/upload")
 async def upload_replay_file(file: UploadFile = File(...)):  # noqa: B008
-    """Accept a .asc or .csv file and store it server-side for replay."""
+    """Accept a .asc, .csv, or .mf4 file and store it server-side for replay."""
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".asc", ".csv"}:
-        raise HTTPException(status_code=400, detail="Only .asc and .csv files are supported")
+    if suffix not in {".asc", ".csv", ".mf4", ".mdf"}:
+        raise HTTPException(status_code=400, detail="Only .asc, .csv, and .mf4 files are supported")
 
     dest = UPLOAD_DIR / file.filename
     dest.write_bytes(await file.read())

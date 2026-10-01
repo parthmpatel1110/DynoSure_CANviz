@@ -3,7 +3,8 @@ import { useConnectionStore } from '../../store/connectionStore';
 import { useSendFrameStore } from '../../store/sendFrameStore';
 import { useDbcStore } from '../../store/dbcStore';
 
-const DLC_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const DLC_OPTIONS_CLASSIC = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const DLC_OPTIONS_FD = [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 48, 64];
 
 function rateLabel(ms: number): string {
   if (ms <= 0) return '';
@@ -44,13 +45,15 @@ export function SendFramePanel() {
         <span>CAN ID</span>
         <span>DLC</span>
         <span>Data (hex)</span>
-        <span />
+        <span style={{ textAlign: 'center' }}>Flags</span>
         <span>Interval</span>
         <span />
       </div>
 
       {/* Frame rows */}
-      {frames.map((f) => (
+      {frames.map((f) => {
+        const dlcOptions = f.isFd ? DLC_OPTIONS_FD : DLC_OPTIONS_CLASSIC;
+        return (
         <div key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: 3,
           background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)',
           border: `1px solid ${f.isRunning ? 'var(--accent-green)' : 'var(--border-subtle)'}`,
@@ -102,7 +105,7 @@ export function SendFramePanel() {
               disabled={f.dbcMessageId !== undefined}
               onChange={(e) => {
                 const dlc = parseInt(e.target.value);
-                const bytes = f.data.trim().split(/\s+/).map((h) => parseInt(h, 16) || 0);
+                const bytes = f.data.trim().split(/\s+/).filter(Boolean).map((h) => parseInt(h, 16) || 0);
                 const padded = Array.from({ length: dlc }, (_, i) => bytes[i] ?? 0);
                 updateFrame(f.id, {
                   dlc,
@@ -110,38 +113,56 @@ export function SendFramePanel() {
                 });
               }}
             >
-              {DLC_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+              {dlcOptions.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
 
             {/* Data */}
             <input
               style={{ ...inp, letterSpacing: '0.04em', opacity: f.dbcMessageId !== undefined ? 0.6 : 1 }}
               value={f.data}
-              placeholder="FF 00 3C ..."
+              placeholder={f.isFd ? "FF 00 3C ... (up to 64 bytes)" : "FF 00 3C ..."}
               disabled={f.dbcMessageId !== undefined}
               onChange={(e) => updateFrame(f.id, { data: e.target.value })}
             />
 
-            {/* Extended ID toggle */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, opacity: f.dbcMessageId !== undefined ? 0.6 : 1 }}>
-              <input
-                type="checkbox"
-                checked={f.isExtended}
-                disabled={f.dbcMessageId !== undefined}
-                onChange={(e) => updateFrame(f.id, { isExtended: e.target.checked })}
-                title="29-bit extended ID- required for J1939 and some proprietary protocols. Standard CAN uses 11-bit."
-                style={{ cursor: f.dbcMessageId !== undefined ? 'default' : 'pointer', accentColor: 'var(--accent-green)', margin: 0 }}
-              />
-              <span style={{
-                fontSize: 8,
-                fontFamily: 'var(--font-mono)',
-                color: f.isExtended ? 'var(--accent-green)' : 'var(--text-muted)',
-                letterSpacing: '0.02em',
-                lineHeight: 1,
-                userSelect: 'none',
-              }}>
-                29-bit
-              </span>
+            {/* Flags (29-bit EXT, CAN FD, BRS) */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: f.dbcMessageId !== undefined ? 0.6 : 1 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'pointer' }} title="29-bit extended ID">
+                <input
+                  type="checkbox"
+                  checked={f.isExtended}
+                  disabled={f.dbcMessageId !== undefined}
+                  onChange={(e) => updateFrame(f.id, { isExtended: e.target.checked })}
+                  style={{ cursor: 'pointer', accentColor: 'var(--accent-green)', margin: 0, width: 11, height: 11 }}
+                />
+                <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: f.isExtended ? 'var(--accent-green)' : 'var(--text-muted)' }}>EXT</span>
+              </label>
+
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'pointer' }} title="CAN FD frame (payload up to 64 bytes)">
+                <input
+                  type="checkbox"
+                  checked={f.isFd}
+                  disabled={f.dbcMessageId !== undefined}
+                  onChange={(e) => {
+                    const isFd = e.target.checked;
+                    const dlc = !isFd && f.dlc > 8 ? 8 : f.dlc;
+                    updateFrame(f.id, { isFd, dlc, bitrateSwitch: isFd ? f.bitrateSwitch : false });
+                  }}
+                  style={{ cursor: 'pointer', accentColor: '#38bdf8', margin: 0, width: 11, height: 11 }}
+                />
+                <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: f.isFd ? '#38bdf8' : 'var(--text-muted)', fontWeight: f.isFd ? 600 : 400 }}>FD</span>
+              </label>
+
+              <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: f.isFd ? 'pointer' : 'not-allowed', opacity: f.isFd ? 1 : 0.35 }} title="Bitrate Switch (high-speed data phase)">
+                <input
+                  type="checkbox"
+                  checked={f.bitrateSwitch}
+                  disabled={!f.isFd || f.dbcMessageId !== undefined}
+                  onChange={(e) => updateFrame(f.id, { bitrateSwitch: e.target.checked })}
+                  style={{ cursor: f.isFd ? 'pointer' : 'not-allowed', accentColor: '#f59e0b', margin: 0, width: 11, height: 11 }}
+                />
+                <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: f.bitrateSwitch ? '#f59e0b' : 'var(--text-muted)', fontWeight: f.bitrateSwitch ? 600 : 400 }}>BRS</span>
+              </label>
             </div>
 
             {/* Interval + rate label */}
@@ -269,7 +290,8 @@ export function SendFramePanel() {
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
 
       {/* Add frame button */}
       <button
@@ -293,7 +315,7 @@ export function SendFramePanel() {
 }
 
 const gridStyle = {
-  gridTemplateColumns: '72px 44px 1fr 28px 110px auto',
+  gridTemplateColumns: '72px 48px 1fr 100px 110px auto',
   gap: 5,
 };
 

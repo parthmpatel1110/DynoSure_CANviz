@@ -4,15 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "DynoSure-canviz"
-version = "0.1.6"
+version = "0.1.7"
 description = "Open-source browser-based CAN bus analyzer"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 license = "MIT"
 authors = [{ name = "Mukesh Patel", email = "dynosure.india@gmail.com" }]
 keywords = ["CAN bus", "automotive", "analyzer", "cantools", "python-can", "J1939", "CANopen"]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
     "Development Status :: 3 - Alpha"
@@ -34,6 +39,7 @@ dependencies = [
     "pretty_j1939>=0.0.4",
     "httpx>=0.27",
     "canopen>=2.4.0",
+    "DynoSure-slcanv1>=0.4.6",
 ]
 
 [project.urls]
@@ -50,6 +56,10 @@ canviz = "canviz.cli:main"
 uds = [
     "can-isotp>=2.0",
     "udsoncan>=1.21",
+]
+# ASAM MDF4 logging and replay support
+mf4 = [
+    "asammdf>=8.0",
 ]
 # Reverse-engineering toolkit - numpy/scipy (Phase 5.6)
 re = [

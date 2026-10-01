@@ -87,9 +87,9 @@ const BASE_COLUMNS: ColumnDef<FrameRow>[] = [
   {
     accessorKey: 'dataHex',
     header: 'Data',
-    size: 220,
+    size: 240,
     cell: (info) => (
-      <span className="mono" style={styles.dataCell}>
+      <span className="mono" style={styles.dataCell} title={info.getValue<string>()}>
         {info.getValue<string>()}
       </span>
     ),
@@ -519,6 +519,7 @@ export function MessageTable() {
                       <span className="badge badge-muted">EXT</span>
                     )}
                     {frame.isFd && <span className="badge badge-blue">FD</span>}
+                    {frame.bitrateSwitch && <span className="badge badge-amber" title="Bitrate Switch (BRS)">BRS</span>}
                     {showDecoded && frame.decodedSignals?.length ? (
                       <span className="badge badge-green">DBC</span>
                     ) : null}
@@ -593,6 +594,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: 'var(--text-primary)',
     letterSpacing: '0.04em',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
   timeCell: {
     fontSize: 10,

@@ -19,6 +19,7 @@ export function LogControls() {
   const recordingStart = useLogStore((s) => s.recordingStart);
   const ascUrl         = useLogStore((s) => s.ascUrl);
   const csvUrl         = useLogStore((s) => s.csvUrl);
+  const mf4Url         = useLogStore((s) => s.mf4Url);
   const logError       = useLogStore((s) => s.logError);
   const startRecording = useLogStore((s) => s.startRecording);
   const stopRecording  = useLogStore((s) => s.stopRecording);
@@ -72,7 +73,7 @@ export function LogControls() {
       {logError && <div className="error-banner">{logError}</div>}
 
       {/* Download links — shown after stop */}
-      {(ascUrl || csvUrl) && !recording && (
+      {(ascUrl || csvUrl || mf4Url) && !recording && (
         <div style={styles.downloads}>
           <span style={styles.downloadsLabel} className="text-xs text-muted">
             Session saved — download:
@@ -96,6 +97,17 @@ export function LogControls() {
                 style={{ textDecoration: 'none', textAlign: 'center' }}
               >
                 ↓ .csv
+              </a>
+            )}
+            {mf4Url && (
+              <a
+                href={mf4Url}
+                download
+                className="btn btn-ghost btn-sm flex-1"
+                style={{ textDecoration: 'none', textAlign: 'center', borderColor: '#38bdf860', color: '#38bdf8' }}
+                title="Download ASAM MDF4 binary log"
+              >
+                ↓ .mf4
               </a>
             )}
           </div>

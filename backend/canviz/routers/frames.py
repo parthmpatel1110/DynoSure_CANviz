@@ -34,11 +34,25 @@ async def ws_frames(websocket: WebSocket):
 async def send_frame(req: SendFrameRequest):
     if not bus_manager.connected:
         raise HTTPException(status_code=400, detail="Not connected. Call /connect first.")
-    if len(req.data) > 8:
-        raise HTTPException(status_code=400, detail="CAN 2.0 data max 8 bytes.")
+    max_len = 64 if req.is_fd else 8
+    if len(req.data) > max_len:
+        proto_name = "CAN FD" if req.is_fd else "CAN 2.0"
+        raise HTTPException(status_code=400, detail=f"{proto_name} data max {max_len} bytes.")
     try:
-        await bus_manager.send(req.id, req.data, req.is_extended_id)
+        await bus_manager.send(
+            arbitration_id=req.id,
+            data=req.data,
+            is_extended_id=req.is_extended_id,
+            is_fd=req.is_fd,
+            bitrate_switch=req.bitrate_switch,
+        )
         stats.on_tx(len(req.data))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc))
-    return {"ok": True, "id": hex(req.id), "data": req.data}
+    return {
+        "ok": True,
+        "id": hex(req.id),
+        "data": req.data,
+        "is_fd": req.is_fd,
+        "bitrate_switch": req.bitrate_switch,
+    }

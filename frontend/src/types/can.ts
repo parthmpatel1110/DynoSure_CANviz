@@ -82,6 +82,7 @@ export interface CanFrame {
   timestamp: number;        // Unix epoch float (seconds)
   is_extended_id: boolean;
   is_fd: boolean;
+  bitrate_switch?: boolean;
   channel?: number;
   // Backend key is "signals"; frameStore normalises to decoded_signals
   signals?: DecodedSignal[];
@@ -109,6 +110,7 @@ export interface FrameRow {
   lastSeen: number;         // Date.now() ms
   isExtended: boolean;
   isFd: boolean;
+  bitrateSwitch?: boolean;
   flashKey: number;         // bumped on every update, triggers flash
   decodedSignals?: DecodedSignal[];
   j1939?: J1939Info;        // Present when J1939 mode is on and frame is extended
@@ -134,6 +136,8 @@ export interface ConnectionConfig {
   index?: number;           // gs_usb / kvaser: device index (default 0)
   bitrate: number;          // bps: 125000 | 250000 | 500000 | 1000000
   baudrate : number;        // baudrate for slcan port com
+  fd?: boolean;             // CAN FD mode enabled
+  data_bitrate?: number;    // CAN FD data bitrate in bps (e.g. 2000000)
 }
 
 export interface ConnectionState {
@@ -193,6 +197,60 @@ export interface FilterState {
   idText: string;     // raw input from user (hex string or range)
   signalName: string; // substring match
   showDecoded: boolean;
+  frameType?: 'all' | 'fd' | 'classic';
+}
+
+// ============================================================
+// Universal Flasher types
+// ============================================================
+
+export interface ProtocolOptionInfo {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'boolean' | 'select';
+  default: any;
+  options: string[];
+  description: string;
+}
+
+export interface FlashingProtocolInfo {
+  id: string;
+  name: string;
+  description: string;
+  default_tx_id: string;
+  default_rx_id: string;
+  is_extended_id: boolean;
+  supports_fd: boolean;
+  default_chunk_size: number;
+  options: ProtocolOptionInfo[];
+}
+
+export interface FirmwareParsedInfo {
+  filename: string;
+  base_address: string;
+  total_bytes: number;
+  crc32: string;
+  md5: string;
+  format: string;
+  firmware_base64: string;
+}
+
+export interface FlasherStatus {
+  status: 'idle' | 'connecting' | 'erasing' | 'flashing' | 'verifying' | 'resetting' | 'completed' | 'error' | 'aborted' | 'running';
+  stage: string;
+  progress: number;
+  bytes_transferred: number;
+  total_bytes: number;
+  speed_kbps: number;
+  eta_seconds: number;
+  error?: string | null;
+  active: boolean;
+}
+
+export interface FlasherLogEntry {
+  timestamp: number;
+  level: 'info' | 'debug' | 'warning' | 'error' | 'tx' | 'rx' | 'success';
+  message: string;
 }
 
 // ============================================================
@@ -204,6 +262,8 @@ export interface ApiStatus {
   interface: InterfaceType;
   channel?: string;
   bitrate?: number;
+  fd?: boolean;
+  data_bitrate?: number;
   frame_count: number;
 }
 
