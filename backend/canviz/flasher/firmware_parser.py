@@ -36,6 +36,8 @@ class FirmwareInfo:
             "crc32": self.crc32,
             "md5": self.md5,
             "format": self.format,
+            "file_type": self.format,
+            "size_formatted": f"{self.total_bytes / 1024:.1f} KB" if self.total_bytes >= 1024 else f"{self.total_bytes} B",
         }
 
 
@@ -143,7 +145,6 @@ def parse_srec(text: str) -> tuple[int, bytes]:
         if (sum(raw) & 0xFF) != 0xFF:
             raise ValueError(f"S-Record checksum mismatch in line: {line}")
 
-        count = raw[0]
         payload = raw[1:-1]
 
         if stype == "1":  # 16-bit address

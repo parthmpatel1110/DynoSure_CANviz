@@ -6,6 +6,7 @@ REST and WebSocket API endpoints for the Universal CAN Flashing Tool.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import inspect
 from pathlib import Path

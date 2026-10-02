@@ -1,14 +1,14 @@
-import pytest
-import asyncio
 from pathlib import Path
+
+import pytest
+
+import canviz.flasher.protocols.template as tmpl
 from canviz.flasher.base import (
-    BaseFlashingProtocol,
     FlashContext,
-    ProtocolOption,
     FlasherAbortedException,
 )
 from canviz.flasher.manager import FlasherManager
-import canviz.flasher.protocols.template as tmpl
+
 
 def test_flasher_manager_builtins():
     mgr = FlasherManager()

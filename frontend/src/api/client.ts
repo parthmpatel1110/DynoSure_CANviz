@@ -196,6 +196,8 @@ export function apiGetFlasherTemplate() {
   return request<{ code: string }>('/flasher/protocols/template');
 }
 
+export const apiGetProtocolTemplate = apiGetFlasherTemplate;
+
 export function apiGetProtocolCode(protocolId: string) {
   return request<{ id: string; code: string }>(`/flasher/protocols/${protocolId}/code`);
 }

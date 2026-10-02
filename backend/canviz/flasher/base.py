@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 import can
@@ -19,7 +19,6 @@ import can
 
 class FlasherAbortedException(Exception):
     """Raised when the user aborts an ongoing flashing operation."""
-    pass
 
 
 @dataclass
@@ -209,11 +208,15 @@ class BaseFlashingProtocol(ABC):
             "id": cls.id,
             "name": cls.name,
             "description": cls.description,
+            "version": getattr(cls, "version", "1.0.0"),
+            "author": getattr(cls, "author", "CANviz"),
+            "is_custom": getattr(cls, "is_custom", False),
             "default_tx_id": f"0x{cls.default_tx_id:X}",
             "default_rx_id": f"0x{cls.default_rx_id:X}",
             "is_extended_id": cls.is_extended_id,
             "supports_fd": cls.supports_fd,
             "default_chunk_size": cls.default_chunk_size,
+            "supported_actions": getattr(cls, "supported_actions", ["erase", "verify", "reset_ecu"]),
             "options": [opt.as_dict() for opt in raw_opts if hasattr(opt, "as_dict")],
         }
 

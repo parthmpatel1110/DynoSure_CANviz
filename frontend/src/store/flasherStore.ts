@@ -222,7 +222,6 @@ export const useFlasherStore = create<FlasherStoreState>((set, get) => ({
   runAction: async (action: 'erase' | 'verify' | 'reset_ecu') => {
     const {
       selectedProtocolId,
-      firmwareInfo,
       txId,
       rxId,
       baseAddress,

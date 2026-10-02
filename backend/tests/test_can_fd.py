@@ -1,8 +1,10 @@
 import pytest
-from canviz.config import CANConfig
-from canviz.models import SendFrameRequest, CANFrame
+
 from canviz.bus import BusManager
+from canviz.config import CANConfig
+from canviz.models import SendFrameRequest
 from canviz.routers.replay import _parse_asc, _parse_csv
+
 
 def test_can_config_fd():
     cfg = CANConfig(
@@ -94,6 +96,7 @@ async def test_virtual_bus_fd_connect_and_send():
 
 def test_mf4_fd_logging_and_replay(tmp_path):
     import can
+
     from canviz.routers.replay import _parse_mf4
 
     mf4_file = tmp_path / "test_fd.mf4"

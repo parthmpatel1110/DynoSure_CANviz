@@ -182,7 +182,7 @@ def _parse_mf4(filepath: Path):
                 bool(getattr(m, "is_fd", False)),
                 bool(getattr(m, "bitrate_switch", False)),
             )
-    except Exception as exc:
+    except Exception:
         pass
 
 

@@ -1,19 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useConnectionStore } from '../../store/connectionStore';
 import { useFlasherStore } from '../../store/flasherStore';
 import {
   apiGetProtocolCode,
   apiGetProtocolTemplate,
   apiUploadProtocolFile,
-  apiSubmitProtocolCode,
 } from '../../api/client';
-import type { FlashingProtocolInfo } from '../../types/can';
 
 const CHUNK_SIZES = [8, 16, 32, 64, 128, 256, 512, 1024, 2048];
 
 export function FlasherPanel() {
   const isConnected = useConnectionStore((s) => s.status === 'connected');
-  const busConfig = useConnectionStore((s) => s.config);
 
   const {
     protocols,
@@ -160,7 +157,7 @@ export function FlasherPanel() {
           >
             {protocols.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} (v{p.version}) - {p.author}
+                {p.name}{p.version ? ` (v${p.version})` : ''}{p.author ? ` - ${p.author}` : ''}
               </option>
             ))}
           </select>
@@ -306,9 +303,9 @@ export function FlasherPanel() {
                     <div key={opt.key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <label style={{ ...styles.fieldLabel, display: 'flex', justifyContent: 'space-between' }}>
                         <span>{opt.label}</span>
-                        {opt.type === 'hex' && <span style={{ color: 'var(--text-muted)' }}>Hex</span>}
+                        {(opt.type === 'hex' || opt.key.endsWith('_hex')) && <span style={{ color: 'var(--text-muted)' }}>Hex</span>}
                       </label>
-                      {opt.type === 'bool' ? (
+                      {opt.type === 'bool' || opt.type === 'boolean' ? (
                         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                           <input
                             type="checkbox"
@@ -319,32 +316,32 @@ export function FlasherPanel() {
                           />
                           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{opt.description}</span>
                         </label>
-                      ) : opt.type === 'choice' && opt.choices ? (
+                      ) : (opt.type === 'choice' || opt.type === 'select') && (opt.choices || opt.options) ? (
                         <select
                           style={styles.select}
                           value={String(val)}
                           disabled={status.active}
                           onChange={(e) => setProtocolOption(opt.key, e.target.value)}
                         >
-                          {opt.choices.map((c) => (
+                          {(opt.choices || opt.options || []).map((c: string) => (
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
                       ) : (
                         <input
                           style={styles.input}
-                          type={opt.type === 'int' ? 'number' : 'text'}
+                          type={opt.type === 'int' || opt.type === 'number' ? 'number' : 'text'}
                           value={String(val)}
                           disabled={status.active}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            const parsed = opt.type === 'int' ? parseInt(raw, 10) || 0 : raw;
+                            const parsed = (opt.type === 'int' || opt.type === 'number') ? (opt.type === 'int' ? parseInt(raw, 10) || 0 : parseFloat(raw) || 0) : raw;
                             setProtocolOption(opt.key, parsed);
                           }}
                           placeholder={String(opt.default)}
                         />
                       )}
-                      {opt.type !== 'bool' && opt.description && (
+                      {opt.type !== 'bool' && opt.type !== 'boolean' && opt.description && (
                         <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{opt.description}</span>
                       )}
                     </div>
@@ -382,7 +379,7 @@ export function FlasherPanel() {
               <div style={styles.firmwareCard}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="badge badge-green">.{firmwareInfo.file_type.toUpperCase()}</span>
+                    <span className="badge badge-green">.{(firmwareInfo.file_type || firmwareInfo.format || 'BIN').toUpperCase()}</span>
                     <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-all' }}>
                       {firmwareInfo.filename}
                     </span>
@@ -399,7 +396,7 @@ export function FlasherPanel() {
                 </div>
 
                 <div style={styles.firmwareDetailsGrid}>
-                  <div><span style={styles.metaLabel}>Size:</span> <span className="mono">{firmwareInfo.size_formatted} ({firmwareInfo.total_bytes.toLocaleString()} B)</span></div>
+                  <div><span style={styles.metaLabel}>Size:</span> <span className="mono">{firmwareInfo.size_formatted || `${(firmwareInfo.total_bytes / 1024).toFixed(1)} KB`} ({firmwareInfo.total_bytes.toLocaleString()} B)</span></div>
                   <div><span style={styles.metaLabel}>Base Addr:</span> <span className="mono">{firmwareInfo.base_address}</span></div>
                   <div><span style={styles.metaLabel}>CRC32:</span> <span className="mono">{firmwareInfo.crc32}</span></div>
                   <div><span style={styles.metaLabel}>MD5:</span> <span className="mono" style={{ fontSize: 9 }}>{firmwareInfo.md5}</span></div>
@@ -452,7 +449,7 @@ export function FlasherPanel() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
                 <button
                   className="btn btn-ghost btn-sm"
-                  disabled={!isConnected || status.active || !selectedProto?.supported_actions.includes('erase')}
+                  disabled={!isConnected || status.active || !(selectedProto?.supported_actions ?? ['erase', 'verify', 'reset_ecu']).includes('erase')}
                   onClick={() => runAction('erase')}
                   title="Erase flash memory on target"
                 >
@@ -460,7 +457,7 @@ export function FlasherPanel() {
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
-                  disabled={!isConnected || status.active || !firmwareInfo || !selectedProto?.supported_actions.includes('verify')}
+                  disabled={!isConnected || status.active || !firmwareInfo || !(selectedProto?.supported_actions ?? ['erase', 'verify', 'reset_ecu']).includes('verify')}
                   onClick={() => runAction('verify')}
                   title="Verify flash memory checksum"
                 >
@@ -468,7 +465,7 @@ export function FlasherPanel() {
                 </button>
                 <button
                   className="btn btn-ghost btn-sm"
-                  disabled={!isConnected || status.active || !selectedProto?.supported_actions.includes('reset_ecu')}
+                  disabled={!isConnected || status.active || !(selectedProto?.supported_actions ?? ['erase', 'verify', 'reset_ecu']).includes('reset_ecu')}
                   onClick={() => runAction('reset_ecu')}
                   title="Send ECU Software Reset command"
                 >
@@ -493,7 +490,7 @@ export function FlasherPanel() {
             <span style={styles.cardTitle}>3. Real-time Telemetry & Log Console</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className={`badge ${
-                status.status === 'success' ? 'badge-green' :
+                status.status === 'success' || status.status === 'completed' ? 'badge-green' :
                 status.status === 'failed' || status.status === 'error' ? 'badge-red' :
                 status.active ? 'badge-blue' : 'badge-muted'
               }`}>
@@ -520,7 +517,7 @@ export function FlasherPanel() {
                   style={{
                     ...styles.progressFill,
                     width: `${Math.min(100, Math.max(0, status.progress))}%`,
-                    background: status.status === 'failed' ? '#ef4444' : status.progress === 100 ? 'var(--accent-green)' : '#38bdf8',
+                    background: status.status === 'failed' || status.status === 'error' ? '#ef4444' : status.progress === 100 ? 'var(--accent-green)' : '#38bdf8',
                   }}
                 />
               </div>
@@ -577,7 +574,7 @@ export function FlasherPanel() {
                   if (l.level === 'tx') color = '#38bdf8';
                   else if (l.level === 'rx') color = '#a855f7';
                   else if (l.level === 'success') color = '#22c55e';
-                  else if (l.level === 'warn') color = '#f59e0b';
+                  else if (l.level === 'warn' || l.level === 'warning') color = '#f59e0b';
                   else if (l.level === 'error') color = '#ef4444';
 
                   return (
@@ -659,7 +656,7 @@ export function FlasherPanel() {
                               {p.name}
                             </span>
                             <span className="mono text-xs" style={{ color: 'var(--text-muted)' }}>
-                              v{p.version} by {p.author}
+                              {p.version ? `v${p.version}` : ''}{p.author ? ` by ${p.author}` : ''}
                             </span>
                             {p.supports_fd && <span className="badge badge-blue">CAN FD</span>}
                             {p.is_custom && <span className="badge badge-amber">User Script</span>}
@@ -693,7 +690,7 @@ export function FlasherPanel() {
                         <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10, color: 'var(--text-muted)' }}>
                           <span>Default Tx/Rx: <strong className="mono">{p.default_tx_id} / {p.default_rx_id}</strong></span>
                           <span>Chunk: <strong className="mono">{p.default_chunk_size} B</strong></span>
-                          <span>Actions: <strong className="mono">{p.supported_actions.join(', ')}</strong></span>
+                          <span>Actions: <strong className="mono">{(p.supported_actions ?? ['erase', 'verify', 'reset_ecu']).join(', ')}</strong></span>
                         </div>
                       </div>
                     ))}

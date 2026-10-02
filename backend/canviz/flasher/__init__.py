@@ -18,11 +18,11 @@ flasher_manager.discover_protocols()
 
 __all__ = [
     "BaseFlashingProtocol",
+    "FirmwareInfo",
     "FlashContext",
     "FlasherAbortedException",
-    "ProtocolOption",
-    "FirmwareInfo",
-    "parse_firmware",
     "FlasherManager",
+    "ProtocolOption",
     "flasher_manager",
+    "parse_firmware",
 ]

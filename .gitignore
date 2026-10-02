@@ -52,6 +52,9 @@ backend/canviz/static/index.html
 # Keep the static dir itself but not the build output
 # (rebuild with npm run build before pip install)
 
+# Dynamic flasher plugins uploaded at runtime
+backend/canviz/flasher/protocols/user_*.py
+
 # Logs and session files
 *.asc
 *.csv

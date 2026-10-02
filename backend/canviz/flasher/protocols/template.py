@@ -13,6 +13,7 @@ To write your own custom CAN flashing protocol:
 from __future__ import annotations
 
 import asyncio
+
 from canviz.flasher.base import BaseFlashingProtocol, FlashContext, ProtocolOption
 
 
@@ -99,7 +100,7 @@ class CustomUserProtocol(BaseFlashingProtocol):
             ctx.check_abort()
 
             chunk = ctx.firmware_bytes[offset : offset + chunk_size]
-            current_addr = ctx.base_address + offset
+            _current_addr = ctx.base_address + offset
 
             # Example: Send block over CAN
             # await ctx.send_frame(arb_id=ctx.tx_id, data=chunk)

@@ -28,8 +28,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 import time
 from collections.abc import Callable
+from typing import Any
 
 import can
 from can import Message
@@ -361,9 +363,6 @@ def _release_bus_resources(bus: can.BusABC) -> None:
             for dev in devs:
                 with contextlib.suppress(Exception):
                     usb.util.dispose_resources(dev)
-
-
-import queue
 
 
 class DynoSureSlcanBus(can.BusABC):

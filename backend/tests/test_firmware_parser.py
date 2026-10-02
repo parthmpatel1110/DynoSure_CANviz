@@ -1,9 +1,9 @@
-import pytest
 from canviz.flasher.firmware_parser import (
     parse_firmware,
     parse_intel_hex,
     parse_srec,
 )
+
 
 def test_parse_binary_file():
     raw_bytes = bytes([i % 256 for i in range(256)])

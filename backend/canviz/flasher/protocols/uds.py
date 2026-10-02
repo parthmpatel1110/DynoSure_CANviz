@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import struct
 import zlib
-from typing import Any
 
 from canviz.flasher.base import BaseFlashingProtocol, FlashContext, ProtocolOption
 
@@ -69,9 +68,7 @@ class UDSBootloaderProtocol(BaseFlashingProtocol):
         payload.extend(data)
 
         # Standard CAN single-frame framing: length byte followed by UDS payload
-        if ctx.is_fd and len(payload) <= 62:
-            frame_data = bytes([len(payload)]) + bytes(payload)
-        elif len(payload) <= 7:
+        if ctx.is_fd and len(payload) <= 62 or len(payload) <= 7:
             frame_data = bytes([len(payload)]) + bytes(payload)
         else:
             # Multi-byte or raw frame
@@ -98,7 +95,7 @@ class UDSBootloaderProtocol(BaseFlashingProtocol):
             nrc = resp_bytes[2]
             # NRC 0x78: requestCorrectlyReceived-ResponsePending — wait for pending response
             if nrc == 0x78:
-                ctx.log(f"ECU busy (NRC 0x78 ResponsePending), waiting...", level="warning")
+                ctx.log("ECU busy (NRC 0x78 ResponsePending), waiting...", level="warning")
                 for _ in range(20):
                     ctx.check_abort()
                     pending_resp = await ctx.recv_frame(rx_id=ctx.rx_id, timeout=timeout)
@@ -145,7 +142,7 @@ class UDSBootloaderProtocol(BaseFlashingProtocol):
             except ValueError:
                 key_bytes = bytes([0x00, 0x00, 0x00, 0x00])
 
-            ctx.log(f"Sending Security Key (0x27 0x02)...")
+            ctx.log("Sending Security Key (0x27 0x02)...")
             await self._send_uds_request(ctx, service=0x27, subfunction=0x02, data=key_bytes)
             ctx.log("Security Access granted.", level="success")
             await asyncio.sleep(0.1)
@@ -173,7 +170,7 @@ class UDSBootloaderProtocol(BaseFlashingProtocol):
         ctx.set_stage("FLASHING")
         ctx.log(f"Requesting download (0x34) for 0x{ctx.base_address:08X} ({total_len} bytes)...")
         req_dl_data = bytes([0x00, 0x44]) + struct.pack(">II", ctx.base_address, total_len)
-        dl_resp = await self._send_uds_request(ctx, service=0x34, data=req_dl_data)
+        await self._send_uds_request(ctx, service=0x34, data=req_dl_data)
         ctx.log("Request Download accepted by ECU.", level="success")
 
         # Step 5: Transfer Data (0x36)

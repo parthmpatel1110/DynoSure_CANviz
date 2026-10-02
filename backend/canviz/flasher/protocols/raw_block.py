@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import struct
 import zlib
-from typing import Any
 
 from canviz.flasher.base import BaseFlashingProtocol, FlashContext, ProtocolOption
 

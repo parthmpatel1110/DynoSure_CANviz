@@ -207,9 +207,10 @@ export interface FilterState {
 export interface ProtocolOptionInfo {
   key: string;
   label: string;
-  type: 'string' | 'number' | 'boolean' | 'select';
+  type: 'string' | 'number' | 'boolean' | 'select' | 'hex' | 'bool' | 'choice' | 'int';
   default: any;
-  options: string[];
+  options?: string[];
+  choices?: string[];
   description: string;
 }
 
@@ -223,6 +224,10 @@ export interface FlashingProtocolInfo {
   supports_fd: boolean;
   default_chunk_size: number;
   options: ProtocolOptionInfo[];
+  version?: string;
+  author?: string;
+  is_custom?: boolean;
+  supported_actions?: ('erase' | 'verify' | 'reset_ecu')[];
 }
 
 export interface FirmwareParsedInfo {
@@ -232,11 +237,13 @@ export interface FirmwareParsedInfo {
   crc32: string;
   md5: string;
   format: string;
+  file_type?: string;
+  size_formatted?: string;
   firmware_base64: string;
 }
 
 export interface FlasherStatus {
-  status: 'idle' | 'connecting' | 'erasing' | 'flashing' | 'verifying' | 'resetting' | 'completed' | 'error' | 'aborted' | 'running';
+  status: 'idle' | 'connecting' | 'erasing' | 'flashing' | 'verifying' | 'resetting' | 'completed' | 'error' | 'aborted' | 'running' | 'success' | 'failed';
   stage: string;
   progress: number;
   bytes_transferred: number;
@@ -249,7 +256,7 @@ export interface FlasherStatus {
 
 export interface FlasherLogEntry {
   timestamp: number;
-  level: 'info' | 'debug' | 'warning' | 'error' | 'tx' | 'rx' | 'success';
+  level: 'info' | 'debug' | 'warning' | 'error' | 'tx' | 'rx' | 'success' | 'warn';
   message: string;
 }
 
