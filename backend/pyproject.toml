@@ -70,6 +70,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "ruff>=0.4",
+    "asammdf>=8.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -95,12 +95,16 @@ async def test_virtual_bus_fd_connect_and_send():
     assert not mgr.connected
 
 def test_mf4_fd_logging_and_replay(tmp_path):
+    pytest.importorskip("asammdf")
     import can
 
     from canviz.routers.replay import _parse_mf4
 
     mf4_file = tmp_path / "test_fd.mf4"
-    writer = can.MF4Writer(str(mf4_file))
+    try:
+        writer = can.MF4Writer(str(mf4_file))
+    except (NotImplementedError, Exception) as exc:
+        pytest.skip(f"MF4Writer not available: {exc}")
 
     # Classical CAN message
     msg_std = can.Message(
