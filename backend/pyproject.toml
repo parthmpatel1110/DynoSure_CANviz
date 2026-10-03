@@ -7,13 +7,12 @@ name = "DynoSure-canviz"
 version = "0.1.7"
 description = "Open-source browser-based CAN bus analyzer"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Mukesh Patel", email = "dynosure.india@gmail.com" }]
 keywords = ["CAN bus", "automotive", "analyzer", "cantools", "python-can", "J1939", "CANopen"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
